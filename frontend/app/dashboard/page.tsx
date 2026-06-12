@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { 
-  FileText, Cpu, CheckCircle2, User, HelpCircle, AlertTriangle, 
-  RefreshCw, Play, Loader, ShieldAlert, Sparkles, Plus, Terminal
+  FileText, Cpu, CheckCircle2, User,
+  RefreshCw, Play, Loader, ShieldAlert, Sparkles, Terminal
 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -96,9 +96,9 @@ export default function Dashboard() {
     return () => clearInterval(intervalId);
   }, [activeApplicationId, showLogModal]);
 
-  const loadProfileFromDb = async (userId: string) => {
+  async function loadProfileFromDb(userId: string) {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
@@ -107,10 +107,12 @@ export default function Dashboard() {
       if (data) {
         setProfile(data);
       }
-    } catch (e) {}
-  };
+    } catch {
+      // Keep dashboard usable in preview/offline mode.
+    }
+  }
 
-  const loadMockProfile = () => {
+  function loadMockProfile() {
     setProfile({
       full_name: 'Jane Developer',
       headline: 'Senior Full Stack Engineer',
@@ -123,9 +125,9 @@ export default function Dashboard() {
         { school: 'State University', degree: 'B.S. Computer Science', dates: '2019-2023' }
       ]
     });
-  };
+  }
 
-  const fetchJobs = async () => {
+  async function fetchJobs() {
     try {
       setIsJobsLoading(true);
       const res = await fetch('/api/jobs');
@@ -136,7 +138,7 @@ export default function Dashboard() {
     } finally {
       setIsJobsLoading(false);
     }
-  };
+  }
 
   const handleParseResume = async () => {
     if (!resumeText.trim()) return;

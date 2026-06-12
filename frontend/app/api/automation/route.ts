@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { Client } from 'pg';
-import path from 'path';
 
 // Local in-memory store for mock applications when database is offline
 const mockApplicationsDb: Record<string, any> = {};
@@ -81,7 +80,7 @@ export async function POST(request: Request) {
       );
 
       // Static resolution of backend modules
-      const { runAutoApply } = require('../../../../../backend/automation/runner');
+      const { runAutoApply } = require('../../../../backend/automation/runner');
       
       // Execute in background
       runAutoApply(applicationId).catch((err: any) => {

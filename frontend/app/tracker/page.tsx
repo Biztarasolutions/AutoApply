@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { 
-  Loader, Calendar, MapPin, DollarSign, ArrowRightLeft, 
-  Trash2, Briefcase, Plus, CheckCircle2, ChevronRight
+  Loader, Calendar, MapPin, Plus
 } from 'lucide-react';
 
 type Application = {
@@ -34,10 +33,24 @@ const STATUS_COLUMNS = [
 
 export default function Tracker() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  async function fetchApplications(userId: string) {
+    try {
+      setLoading(true);
+      const res = await fetch(`/api/applications?userId=${userId}`);
+      const data = await res.json();
+      if (!data.error) {
+        setApplications(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     const getSessionAndData = async () => {
@@ -46,13 +59,11 @@ export default function Tracker() {
       
       if (session) {
         activeUser = session.user;
-        setUser(session.user);
       } else {
         const mockSessionStr = typeof window !== 'undefined' ? localStorage.getItem('sb-mock-session') : null;
         if (mockSessionStr) {
           const session = JSON.parse(mockSessionStr);
           activeUser = session.user;
-          setUser(session.user);
         } else {
           router.push('/auth');
           return;
@@ -66,21 +77,6 @@ export default function Tracker() {
 
     getSessionAndData();
   }, [router]);
-
-  const fetchApplications = async (userId: string) => {
-    try {
-      setLoading(true);
-      const res = await fetch(`/api/applications?userId=${userId}`);
-      const data = await res.json();
-      if (!data.error) {
-        setApplications(data);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleUpdateStatus = async (applicationId: string, newStatus: string) => {
     setUpdatingId(applicationId);

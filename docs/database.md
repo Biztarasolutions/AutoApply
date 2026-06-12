@@ -64,13 +64,45 @@ erDiagram
         string error_message
         timestamp created_at
     }
+    ATS_SCORES {
+        uuid id PK
+        uuid resume_id FK "FK to resumes.id"
+        uuid job_id FK "FK to jobs.id"
+        integer score
+        timestamp created_at
+        timestamp updated_at
+    }
+    MATCH_RESULTS {
+        uuid id PK
+        uuid user_id FK "FK to profiles.id"
+        uuid resume_id FK "FK to resumes.id"
+        uuid job_id FK "FK to jobs.id"
+        decimal match_percentage
+        integer relevance_score
+        timestamp created_at
+    }
+    NOTIFICATIONS {
+        uuid id PK
+        uuid user_id FK "FK to profiles.id"
+        string title
+        string message
+        boolean is_read
+        jsonb metadata
+        timestamp created_at
+    }
 
     USERS ||--|| PROFILES : "creates profile"
     PROFILES ||--o{ RESUMES : "has resumes"
     PROFILES ||--o{ APPLICATIONS : "applies"
+    PROFILES ||--o{ MATCH_RESULTS : "has matches"
+    PROFILES ||--o{ NOTIFICATIONS : "receives"
     JOBS ||--o{ APPLICATIONS : "linked to"
+    JOBS ||--o{ ATS_SCORES : "scored against"
+    JOBS ||--o{ MATCH_RESULTS : "matched against"
     APPLICATIONS ||--o| RESUMES : "uses resume"
     APPLICATIONS ||--|| AUTOMATION_LOGS : "logs steps"
+    RESUMES ||--o{ ATS_SCORES : "has scores"
+    RESUMES ||--o{ MATCH_RESULTS : "has matches"
 ```
 
 ## Security & Policies (RLS)
@@ -103,12 +135,30 @@ Row-Level Security (RLS) is enabled on all tables:
      ```
    - `Service role can insert/update logs`: `true`
 
+6. **ATS Scores**:
+   - Users can view and insert scores linked to resumes they own.
+
+7. **Match Results**:
+   - Users can view and insert their own match results.
+
+8. **Notifications**:
+   - Users can view, insert, and update their own notifications.
+
 ## Performance Indexes
 
 - `idx_resumes_user_id` on `public.resumes(user_id)`
 - `idx_applications_user_id` on `public.applications(user_id)`
 - `idx_applications_job_id` on `public.applications(job_id)`
 - `idx_automation_logs_application_id` on `public.automation_logs(application_id)`
+- `idx_ats_scores_resume_id` on `public.ats_scores(resume_id)`
+- `idx_ats_scores_job_id` on `public.ats_scores(job_id)`
+- `idx_match_results_user_id` on `public.match_results(user_id)`
+- `idx_match_results_job_id` on `public.match_results(job_id)`
+- `idx_notifications_user_id` on `public.notifications(user_id)`
+
+## Automated Migration Flow
+
+Run `npm run db:init` from the repository root. The script connects through `DATABASE_URL`, checks for the base `profiles` table, and applies all migration files from `backend/supabase/migrations` in sorted order when initialization is needed. It also creates the `resumes` and `cover_letters` storage buckets and loads seed jobs from `backend/supabase/seed/seed.sql`.
 
 ## Automation Triggers
 
