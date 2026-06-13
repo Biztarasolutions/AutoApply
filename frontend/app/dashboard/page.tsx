@@ -29,6 +29,11 @@ export default function Dashboard() {
   const [parsedResume, setParsedResume] = useState<Resume | null>(null);
   const [uploadTab, setUploadTab] = useState<'upload' | 'text'>('upload');
 
+  // ATS states
+  const [atsJd, setAtsJd] = useState('');
+  const [atsReport, setAtsReport] = useState<any>(null);
+  const [isAtsLoading, setIsAtsLoading] = useState(false);
+
   useEffect(() => {
     const getSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -223,6 +228,29 @@ export default function Dashboard() {
     }
   };
 
+  const handleCalculateAts = async () => {
+    if (!atsJd.trim()) return;
+    setIsAtsLoading(true);
+    try {
+      const resumeContent = resumeText || JSON.stringify(profile);
+      const res = await fetch('/api/ats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          resumeText: resumeContent, 
+          jobDescription: atsJd,
+          resumeId: parsedResume?.id || null
+        })
+      });
+      const data = await res.json();
+      setAtsReport(data);
+    } catch (e) {
+      console.error('Failed to calculate ATS score:', e);
+    } finally {
+      setIsAtsLoading(false);
+    }
+  };
+
   return (
     <ProtectedRoute>
       <div style={{ padding: '3rem 0' }} className="animate-slide-up">
@@ -324,46 +352,145 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Profile Preview Card */}
+            {/* ATS Analyzer Card */}
             <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
                 <Sparkles size={20} color="var(--color-accent)" />
-                <span>Extracted Profile Details</span>
+                <span>ATS Score Calculator</span>
               </h3>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.9rem' }}>
-                <div><strong>Full Name:</strong> {profile.full_name}</div>
-                <div><strong>Headline:</strong> {profile.headline}</div>
-                <div><strong>Professional Bio:</strong> <span style={{ color: 'var(--text-muted)' }}>{profile.bio}</span></div>
-                
-                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
-                  <strong>Key Skills:</strong>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
-                    {(profile.skills || []).map((skill: string, idx: number) => (
-                      <span key={idx} className="badge badge-info" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
-                        {skill}
-                      </span>
-                    ))}
+              <div className="form-group">
+                <label className="form-label">Job Description</label>
+                <textarea 
+                  rows={6}
+                  placeholder="Paste target job description to calculate match score..." 
+                  className="form-textarea"
+                  value={atsJd}
+                  onChange={(e) => setAtsJd(e.target.value)}
+                />
+              </div>
+
+              <button 
+                onClick={handleCalculateAts}
+                disabled={isAtsLoading || !atsJd.trim()}
+                className="btn btn-accent"
+                style={{ alignSelf: 'flex-start' }}
+              >
+                <CheckCircle2 size={16} />
+                <span>Calculate ATS Score</span>
+              </button>
+
+              {isAtsLoading && (
+                <div className="flex-center" style={{ padding: '2rem 0', flexDirection: 'column', gap: '0.5rem' }}>
+                  <Loader size={24} style={{ animation: 'spin 1.5s linear infinite', color: 'var(--color-accent)' }} />
+                  <p style={{ fontSize: '0.9rem' }}>Gemini is scanning compliance guidelines...</p>
+                </div>
+              )}
+
+              {atsReport && !isAtsLoading && (
+                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1rem' }}>
+                    <div style={{ 
+                      width: '60px', 
+                      height: '60px', 
+                      borderRadius: '50%', 
+                      background: atsReport.score >= 70 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', 
+                      border: `2px solid ${atsReport.score >= 70 ? 'var(--color-accent)' : 'var(--color-warning)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontWeight: 800,
+                      fontSize: '1.25rem',
+                      color: atsReport.score >= 70 ? 'var(--color-accent)' : 'var(--color-warning)'
+                    }}>
+                      {atsReport.score}%
+                    </div>
+                    <div>
+                      <h4 style={{ fontSize: '1rem', color: 'var(--text-main)' }}>ATS Compliance Score</h4>
+                      <p style={{ fontSize: '0.85rem' }}>Based on keyword similarity & technical alignment</p>
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <strong>Matched Keywords:</strong>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.25rem' }}>
+                        {atsReport.matchedKeywords.map((kw: string, i: number) => (
+                          <span key={i} className="badge badge-success" style={{ padding: '0.15rem 0.4rem', fontSize: '0.7rem' }}>{kw}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <strong>Missing / Critical Gaps:</strong>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.25rem' }}>
+                        {atsReport.missingKeywords.map((kw: string, i: number) => (
+                          <span key={i} className="badge badge-danger" style={{ padding: '0.15rem 0.4rem', fontSize: '0.7rem' }}>{kw}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <strong>Optimizations Needed:</strong>
+                      <ul style={{ listStyleType: 'disc', paddingLeft: '1.2rem', marginTop: '0.25rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        {atsReport.suggestions.map((sug: string, i: number) => (
+                          <li key={i}>{sug}</li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 </div>
+              )}
+            </div>
 
-                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
-                  <strong>Work Experience:</strong>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.4rem' }}>
-                    {(profile.experience || []).map((exp: any, idx: number) => (
-                      <div key={idx} style={{ fontSize: '0.85rem' }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{exp.role}</span> at <span style={{ color: 'var(--color-primary)' }}>{exp.company}</span> ({exp.dates})
-                      </div>
-                    ))}
-                  </div>
+          </div>
+
+          {/* Profile Preview Section */}
+          <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '3rem' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
+              <User size={20} color="var(--color-primary)" />
+              <span>Candidate Profile Summary</span>
+            </h3>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.9rem' }}>
+              <div><strong>Full Name:</strong> {profile.full_name}</div>
+              <div><strong>Headline:</strong> {profile.headline}</div>
+              <div><strong>Professional Bio:</strong> <span style={{ color: 'var(--text-muted)' }}>{profile.bio}</span></div>
+              
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
+                <strong>Key Skills:</strong>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
+                  {(profile.skills || []).map((skill: string, idx: number) => (
+                    <span key={idx} className="badge badge-info" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                <strong>Work Experience:</strong>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.4rem' }}>
+                  {(profile.experience || []).map((exp: any, idx: number) => (
+                    <div key={idx} style={{ fontSize: '0.85rem' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{exp.role}</span> at <span style={{ color: 'var(--color-primary)' }}>{exp.company}</span> ({exp.dates})
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-
           </div>
           
         </div>
       </div>
+      
+      {/* Keyframe spinners style injection */}
+      <style jsx global>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+          animation: spin 1s linear infinite;
+        }
+      `}</style>
     </ProtectedRoute>
   );
 }
