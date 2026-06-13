@@ -58,6 +58,16 @@ export default function Navbar() {
                 </li>
                 <li>
                   <Link 
+                    href="/jobs" 
+                    className={`nav-link ${pathname === '/jobs' ? 'active' : ''} flex-center`}
+                    style={{ gap: '0.25rem' }}
+                  >
+                    <Briefcase size={16} />
+                    <span>Jobs</span>
+                  </Link>
+                </li>
+                <li>
+                  <Link 
                     href="/tracker" 
                     className={`nav-link ${pathname === '/tracker' ? 'active' : ''} flex-center`}
                     style={{ gap: '0.25rem' }}
