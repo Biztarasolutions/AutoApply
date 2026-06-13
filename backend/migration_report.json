@@ -1,10 +1,9 @@
 {
-  "timestamp": "2026-06-13T18:33:40.290Z",
+  "timestamp": "2026-06-13T18:52:27.011Z",
   "migration_status": "SUCCESS",
   "executed": [
     "011_drop_duplicate_triggers.sql",
-    "008_update_updated_at.sql",
-    "012_enable_rls_ai_logs.sql"
+    "008_update_updated_at.sql"
   ],
   "skipped": [
     "005_resume_parser_fields.sql",
@@ -12,6 +11,7 @@
     "007_ats_version.sql",
     "009_job_match_history.sql",
     "010_ai_logs.sql",
+    "012_enable_rls_ai_logs.sql",
     "013_enable_rls_job_match_history.sql"
   ],
   "failures": [],
