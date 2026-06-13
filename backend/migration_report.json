@@ -1,0 +1,137 @@
+{
+  "timestamp": "2026-06-13T18:33:40.290Z",
+  "migration_status": "SUCCESS",
+  "executed": [
+    "011_drop_duplicate_triggers.sql",
+    "008_update_updated_at.sql",
+    "012_enable_rls_ai_logs.sql"
+  ],
+  "skipped": [
+    "005_resume_parser_fields.sql",
+    "006_ats_engine_fields.sql",
+    "007_ats_version.sql",
+    "009_job_match_history.sql",
+    "010_ai_logs.sql",
+    "013_enable_rls_job_match_history.sql"
+  ],
+  "failures": [],
+  "rls_verification": [
+    {
+      "tablename": "ai_logs",
+      "rowsecurity": true
+    },
+    {
+      "tablename": "job_match_history",
+      "rowsecurity": true
+    }
+  ],
+  "policies": [
+    {
+      "policyname": "Service can insert ai logs",
+      "tablename": "ai_logs",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "true"
+    },
+    {
+      "policyname": "User can view own ai logs",
+      "tablename": "ai_logs",
+      "cmd": "SELECT",
+      "qual": "(auth.uid() = user_id)",
+      "with_check": null
+    },
+    {
+      "policyname": "job_match_user_insert",
+      "tablename": "job_match_history",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(auth.uid() = user_id)"
+    },
+    {
+      "policyname": "job_match_user_read",
+      "tablename": "job_match_history",
+      "cmd": "SELECT",
+      "qual": "(auth.uid() = user_id)",
+      "with_check": null
+    }
+  ],
+  "tables": [
+    "automation_logs",
+    "resumes",
+    "applications",
+    "ats_scores",
+    "match_results",
+    "notifications",
+    "profiles",
+    "jobs",
+    "application_logs",
+    "question_memory",
+    "job_sources",
+    "automation_rules",
+    "cover_letters",
+    "job_match_history",
+    "ai_logs"
+  ],
+  "rls_status": [
+    {
+      "table_name": "applications",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "automation_logs",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "resumes",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "ats_scores",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "match_results",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "notifications",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "profiles",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "jobs",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "application_logs",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "question_memory",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "job_sources",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "automation_rules",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "cover_letters",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "job_match_history",
+      "rls_enabled": true
+    },
+    {
+      "table_name": "ai_logs",
+      "rls_enabled": true
+    }
+  ]
+}
