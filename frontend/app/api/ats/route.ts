@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import path from 'path';
 
 export async function POST(request: Request) {
   try {
@@ -10,7 +9,7 @@ export async function POST(request: Request) {
     }
 
     // Static resolution of backend modules
-    const { calculateAtsScore } = require('../../../../../backend/ai/ats');
+    const { calculateAtsScore } = require('../../../../backend/ai/ats');
 
     const atsReport = await calculateAtsScore(resumeText, jobDescription);
 

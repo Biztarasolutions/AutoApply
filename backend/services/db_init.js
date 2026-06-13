@@ -38,13 +38,18 @@ async function initDb() {
     if (!tablesExist) {
       console.log('📂 Profiles table not found. Executing migrations...');
       
-      const migrationPath = path.join(__dirname, '../supabase/migrations/01_init.sql');
-      if (fs.existsSync(migrationPath)) {
-        const migrationSql = fs.readFileSync(migrationPath, 'utf8');
-        await client.query(migrationSql);
-        console.log('✅ Applied migration: 01_init.sql');
+      const migrationDir = path.join(__dirname, '../supabase/migrations');
+      if (fs.existsSync(migrationDir)) {
+        const migrationFiles = fs.readdirSync(migrationDir).filter(f => f.endsWith('.sql')).sort();
+        for (const file of migrationFiles) {
+          const migrationPath = path.join(migrationDir, file);
+          console.log(`📂 Applying migration ${file}`);
+          const sql = fs.readFileSync(migrationPath, 'utf8');
+          await client.query(sql);
+          console.log(`✅ Migration ${file} applied`);
+        }
       } else {
-        console.error('❌ Migration file not found at:', migrationPath);
+        console.warn('⚠️ No migrations directory found at:', migrationDir);
       }
 
       // 2. Create Storage Buckets (via SQL queries to storage.buckets)
@@ -78,6 +83,13 @@ async function initDb() {
 
   } catch (err) {
     console.error('❌ Error during database initialization:', err.message);
+    if (err.code === 'ENOTFOUND' && connectionString.includes('.supabase.co')) {
+      console.error(
+        'Tip: Supabase direct database URLs can require IPv6. If your network does not support IPv6, ' +
+        'use the Session Pooler connection string from Supabase Dashboard > Project Settings > Database.'
+      );
+    }
+    process.exitCode = 1;
   } finally {
     await client.end();
     console.log('🔌 Connection to database closed.');

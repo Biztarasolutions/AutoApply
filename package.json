@@ -2,6 +2,9 @@
   "name": "auto-apply-root",
   "version": "1.0.0",
   "description": "AutoApply platform root workspace",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "npm run dev --prefix frontend",
     "build": "npm run build --prefix frontend",
