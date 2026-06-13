@@ -111,7 +111,7 @@ export default function Tracker() {
   const getAppsByStatus = (status: string) => {
     return applications.filter(app => {
       // Normalize 'pending' status
-      const appStatus = app.status === 'withdrawn' ? 'rejected' : app.status;
+      const appStatus = (app.status as string) === 'withdrawn' ? 'rejected' : app.status;
       return appStatus === status;
     });
   };
