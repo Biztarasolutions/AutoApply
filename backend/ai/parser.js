@@ -1,121 +1,69 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+// backend/ai/parser.js
+const { callGemini } = require('./gemini');
+const config = require('./config');
+const { Client } = require('pg');
+require('dotenv').config();
 
 /**
- * Extracts structured data from raw resume text or a base64-encoded file.
- * Falls back to mock parsing if GEMINI_API_KEY is not configured or fails.
+ * Calculate deterministic confidence score based on field presence.
+ * Weights: Name 20, Email 20, Phone 10, Skills 20, Experience 15, Education 10, Certifications 5
  */
-async function parseResume(content, mimeType = 'text/plain') {
-  const apiKey = process.env.GEMINI_API_KEY;
+function calculateConfidence(parsed) {
+  let score = 0;
+  if (parsed.name) score += 20;
+  if (parsed.email) score += 20;
+  if (parsed.phone) score += 10;
+  if (parsed.skills && parsed.skills.length) score += 20;
+  if (parsed.experience && parsed.experience.length) score += 15;
+  if (parsed.education) score += 10;
+  if (parsed.certifications && parsed.certifications.length) score += 5;
+  return Math.min(score, 100);
+}
 
-  if (!apiKey || apiKey === 'your_gemini_api_key') {
-    console.log('⚠️ GEMINI_API_KEY not set. Using local mock resume parser...');
-    return getMockParsedResume(content);
-  }
+/**
+ * Validate required fields (name, email, skills).
+ */
+function hasRequiredFields(parsed) {
+  return parsed.name && parsed.email && parsed.skills && parsed.skills.length;
+}
 
-  try {
-    const { GoogleGenerativeAI } = require('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-1.5-flash',
-      generationConfig: { responseMimeType: "application/json" }
-    });
-
-    const schemaPrompt = `
-      You are an expert ATS (Applicant Tracking System) parser. Analyze the resume content and extract the information in JSON format matching the schema below:
-      
-      Schema:
-      {
-        "full_name": "string (candidate's name)",
-        "email": "string (candidate's email)",
-        "headline": "string (professional summary headline)",
-        "bio": "string (1-2 sentences of personal summary/bio)",
-        "skills": ["string (skill 1)", "string (skill 2)", ...],
-        "experience": [
-          {
-            "company": "string",
-            "role": "string",
-            "dates": "string",
-            "description": "string"
-          }
-        ],
-        "education": [
-          {
-            "school": "string",
-            "degree": "string",
-            "field": "string",
-            "dates": "string"
-          }
-        ]
-      }
-    `;
-
-    let promptParts = [];
-
-    if (mimeType === 'text/plain') {
-      promptParts.push(`${schemaPrompt}\n\nResume Text:\n---\n${content}\n---`);
-    } else {
-      // For binary files like PDF, pass as inlineData
-      promptParts.push({
-        inlineData: {
-          data: content, // base64 representation of the file
-          mimeType: mimeType
-        }
-      });
-      promptParts.push(`${schemaPrompt}\n\nPlease parse the attached document and return the structured JSON data.`);
+/**
+ * Parse a resume using Gemini extraction, then compute confidence.
+ * Retries up to 2 times if required fields missing (as per earlier policy).
+ * @param {string} userId - Supabase auth user id.
+ * @param {string} resumeId - Resume UUID.
+ * @param {string} rawText - Full resume text.
+ * @returns {Promise<object>} - Parsed object with confidence and status.
+ */
+async function parseResume({ userId, resumeId, rawText }) {
+  const maxAttempts = 3; // initial + 2 retries
+  let attempt = 0;
+  let parsed = null;
+  while (attempt < maxAttempts) {
+    attempt++;
+    const prompt = `Extract the following fields from the resume text in JSON format with keys: name, email, phone, skills (array), experience (array), education, certifications (array).\nResume:\n${rawText}`;
+    const response = await callGemini(prompt, { userId });
+    try {
+      parsed = JSON.parse(response);
+    } catch (e) {
+      // If Gemini returns malformed JSON, treat as failure and retry.
+      parsed = {};
     }
-
-    const result = await model.generateContent(promptParts);
-    const text = result.response.text();
-    return JSON.parse(text);
-  } catch (error) {
-    console.error('❌ Error calling Gemini API for resume parsing:', error.message);
-    console.log('🔄 Falling back to mock parser...');
-    return getMockParsedResume(content);
-  }
-}
-
-function getMockParsedResume(text = '') {
-  let email = 'jane.doe@example.com';
-  let full_name = 'Jane Doe';
-
-  if (typeof text === 'string') {
-    const emailMatch = text.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
-    if (emailMatch) email = emailMatch[0];
-    
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length > 0) full_name = lines[0].replace(/[^a-zA-Z\s]/g, '');
+    if (hasRequiredFields(parsed)) break; // success
+    if (attempt >= maxAttempts) break; // no more retries
   }
 
-  return {
-    full_name,
-    email,
-    headline: 'Senior Full Stack Engineer',
-    bio: 'Dynamic software developer with over 5 years of experience building scalable web applications and optimizing system performance.',
-    skills: ['JavaScript', 'React', 'Node.js', 'Next.js', 'PostgreSQL', 'TypeScript', 'Tailwind CSS', 'Git', 'REST APIs', 'Supabase'],
-    experience: [
-      {
-        company: 'DevSolutions Tech',
-        role: 'Lead Frontend Developer',
-        dates: '2023 - Present',
-        description: 'Led the development of a Next.js client portal, improving page load speed by 30% and user engagement by 15%. Coordinated with backend designers to implement custom REST endpoints.'
-      },
-      {
-        company: 'WebFlow Systems',
-        role: 'Full Stack Software Engineer',
-        dates: '2021 - 2023',
-        description: 'Developed and maintained responsive dashboards using React and Express. Integrated PostgreSQL database schemas and optimized slow queries by adding compound indexes.'
-      }
-    ],
-    education: [
-      {
-        school: 'State Tech University',
-        degree: 'Bachelor of Science',
-        field: 'Computer Science',
-        dates: '2017 - 2021'
-      }
-    ]
-  };
+  const confidence = calculateConfidence(parsed);
+  const status = hasRequiredFields(parsed) ? 'SUCCESS' : 'FAILED';
+
+  // Store results in resumes table (upsert on id)
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  const query = `UPDATE resumes SET parser_confidence_score = $1, parser_status = $2, parsed_structure = $3 WHERE id = $4`;
+  await client.query(query, [confidence, status, JSON.stringify(parsed), resumeId]);
+  await client.end();
+
+  return { parsed, confidence, status };
 }
 
-module.exports = { parseResume };
+module.exports = { parseResume, calculateConfidence, hasRequiredFields };
