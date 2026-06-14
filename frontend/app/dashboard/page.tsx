@@ -81,7 +81,7 @@ export default function Dashboard() {
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(1);
-      
+
       if (data && data.length > 0) {
         setParsedResume(data[0]);
         if (data[0].parsed_data) {
@@ -93,6 +93,9 @@ export default function Dashboard() {
             education: data[0].parsed_data.education || prev.education,
           }));
         }
+      } else {
+        // No resume found, redirect to upload page
+        router.replace('/upload');
       }
     } catch (e) {
       console.warn('Could not load resume history from database.');
