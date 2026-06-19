@@ -1,7 +1,13 @@
 // frontend/app/api/profile/check/route.ts
 import { NextResponse } from 'next/server';
-// @ts-ignore
-import { supabaseAdmin } from '../../../../../backend/supabase/utils/bucket';
+import { createClient } from '@supabase/supabase-js';
+
+function getServiceClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function POST(request: Request) {
   try {
@@ -9,7 +15,7 @@ export async function POST(request: Request) {
     if (!userId) {
       return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
     }
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await getServiceClient()
       .from('resumes')
       .select('id')
       .eq('user_id', userId)
