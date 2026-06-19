@@ -16,6 +16,7 @@ export async function POST(request: Request) {
     const userId = formData.get('userId') as string | null;
     const userEmail = formData.get('userEmail') as string | null;
 
+    console.log('Resume upload — userId:', userId, '| userEmail:', userEmail, '| file:', file?.name);
     if (!file || !userId) {
       return NextResponse.json({ error: 'file and userId are required' }, { status: 400 });
     }

@@ -105,7 +105,12 @@ export default function UploadPage() {
       setUploadProgress('Parsing resume content...');
       const data = await res.json();
 
-      setSuccessMsg(`Resume "${file.name}" uploaded and parsed successfully!`);
+      if (data.warning) {
+        setError(`Upload issue: ${data.warning}`);
+      } else {
+        setSuccessMsg(`Resume "${file.name}" uploaded and parsed successfully!`);
+      }
+      console.log('Upload response:', JSON.stringify(data).slice(0, 300));
       await fetchResumes(user.id);
     } catch (e: any) {
       setError(e.message || 'Upload failed. Please try again.');
