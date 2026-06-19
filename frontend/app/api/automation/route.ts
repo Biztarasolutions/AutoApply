@@ -81,7 +81,7 @@ export async function POST(request: Request) {
       );
 
       // Static resolution of backend modules
-      const { runAutoApply } = require('../../../../../backend/automation/runner');
+      const { runAutoApply } = require('../../../../backend/automation/runner');
       
       // Execute in background
       runAutoApply(applicationId).catch((err: any) => {

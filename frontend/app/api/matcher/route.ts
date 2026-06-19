@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     }
 
     // Static resolution of backend modules
-    const { matchJob } = require('../../../../../backend/ai/matcher');
+    const { matchJob } = require('../../../../backend/ai/matcher');
 
     const matchReport = await matchJob(profile, job);
 

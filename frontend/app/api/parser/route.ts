@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     }
 
     // Static resolution of backend modules
-    const { parseResume } = require('../../../../../backend/ai/parser');
+    const { parseResume } = require('../../../../backend/ai/parser');
 
     const parsedData = await parseResume(text);
 

@@ -1,0 +1,22 @@
+{
+  "name": "auto-apply-root",
+  "version": "1.0.0",
+  "description": "AutoApply platform root workspace",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "build": "npm run build --prefix frontend",
+    "start": "npm run start --prefix frontend",
+    "db:init": "node backend/services/db_init.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^16.4.5",
+    "pg": "^8.11.5"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.6"
+  }
+}
