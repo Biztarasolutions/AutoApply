@@ -41,10 +41,12 @@ export async function POST(request: Request) {
     let parsedText = '';
 
     if (file.type === 'application/pdf') {
+      const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+      console.log('PDF extraction — API key present:', !!apiKey, '| key prefix:', apiKey.slice(0, 8));
       try {
-        // Use Gemini multimodal to extract PDF text — works in all serverless environments
+        if (!apiKey) throw new Error('No Gemini API key configured');
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '');
+        const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
         const result = await model.generateContent([
           {
@@ -56,9 +58,26 @@ export async function POST(request: Request) {
           'Extract all text from this resume PDF. Return the raw text content only, preserving structure and formatting as much as possible. Do not summarize or interpret — just extract the text.',
         ]);
         parsedText = result.response.text();
-      } catch (e) {
-        console.error('PDF parse error:', e);
-        parsedText = '[PDF text extraction failed — please paste resume text manually]';
+        console.log('PDF extraction success, length:', parsedText.length);
+      } catch (e: any) {
+        console.error('PDF parse error:', e?.message || e);
+        // Raw byte fallback — extracts readable ASCII text from the PDF binary
+        try {
+          const raw = buffer.toString('latin1');
+          const chunks: string[] = [];
+          const textRe = /\(([^)]{3,})\)/g;
+          let m;
+          while ((m = textRe.exec(raw)) !== null) {
+            const t = m[1].replace(/\\[nrt\\()]/g, ' ').trim();
+            if (t.length > 2) chunks.push(t);
+          }
+          const fallback = chunks.join(' ').replace(/\s+/g, ' ').trim();
+          parsedText = fallback.length > 50
+            ? fallback
+            : `[PDF extraction error: ${e?.message || 'unknown'}. Please ensure GEMINI_API_KEY is set in Netlify env vars and redeploy.]`;
+        } catch {
+          parsedText = `[PDF extraction error: ${e?.message || 'unknown'}]`;
+        }
       }
     } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
       try {
