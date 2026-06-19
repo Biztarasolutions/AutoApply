@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
   FileText, Sparkles, Copy, CheckCircle2, Loader,
-  ChevronDown, RefreshCw, AlertCircle
+  ChevronDown, RefreshCw, AlertCircle, BookOpen
 } from 'lucide-react';
 
 const TONES = [
@@ -18,6 +18,8 @@ const TONES = [
 export default function CoverLetterPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
+  const [savedResumes, setSavedResumes] = useState<any[]>([]);
+  const [selectedResumeId, setSelectedResumeId] = useState('');
 
   const [jobTitle, setJobTitle] = useState('');
   const [company, setCompany] = useState('');
@@ -40,6 +42,17 @@ export default function CoverLetterPage() {
         else { router.push('/auth'); return; }
       }
       setUser(currentUser);
+      // Load saved resumes
+      try {
+        const res = await fetch(`/api/resume?userId=${currentUser!.id}`);
+        const data = await res.json();
+        setSavedResumes(data.resumes || []);
+        // Auto-select first resume
+        if (data.resumes?.length > 0) {
+          setSelectedResumeId(data.resumes[0].id);
+          setResumeText(data.resumes[0].parsed_text || '');
+        }
+      } catch {}
     };
     init();
   }, [router]);
@@ -151,14 +164,36 @@ export default function CoverLetterPage() {
 
             {/* Resume */}
             <div className="glass-panel" style={{ padding: '1.5rem' }}>
-              <h3 style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '1rem', fontSize: '0.95rem' }}>
+              <h3 style={{ fontWeight: 600, color: 'var(--text-main)', marginBottom: '1rem', fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <BookOpen size={16} style={{ color: 'var(--color-primary)' }} />
                 Your Resume *
               </h3>
+              {savedResumes.length > 0 && (
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.35rem' }}>Load from saved resumes</label>
+                  <select
+                    value={selectedResumeId}
+                    onChange={e => {
+                      const id = e.target.value;
+                      setSelectedResumeId(id);
+                      const r = savedResumes.find((r: any) => r.id === id);
+                      if (r) setResumeText(r.parsed_text || '');
+                    }}
+                    style={{ ...inputStyle, cursor: 'pointer' }}
+                  >
+                    {savedResumes.map((r: any) => (
+                      <option key={r.id} value={r.id}>
+                        {r.parsed_structure?.full_name ? `${r.parsed_structure.full_name}'s Resume` : r.file_path?.split('/').pop() || 'Resume'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <textarea
                 value={resumeText}
                 onChange={(e) => setResumeText(e.target.value)}
                 placeholder="Paste your resume text here (name, skills, experience, education)..."
-                rows={8}
+                rows={6}
                 style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
               />
             </div>

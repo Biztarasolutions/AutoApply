@@ -170,6 +170,31 @@ export async function POST(request: Request) {
   }
 }
 
+// PATCH /api/resume — update parsed_text or parsed_structure
+export async function PATCH(request: Request) {
+  try {
+    const { resumeId, userId, parsed_text, parsed_structure } = await request.json();
+    if (!resumeId || !userId) return NextResponse.json({ error: 'resumeId and userId required' }, { status: 400 });
+
+    if (!supabaseUrl || !supabaseServiceKey || supabaseUrl.includes('placeholder')) {
+      return NextResponse.json({ success: true, mock: true });
+    }
+
+    const supabase = getServiceClient();
+    const updates: any = { updated_at: new Date().toISOString() };
+    if (parsed_text !== undefined) updates.parsed_text = parsed_text.replace(/\\/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
+    if (parsed_structure !== undefined) updates.parsed_structure = parsed_structure;
+
+    const { data, error } = await supabase
+      .from('resumes').update(updates).eq('id', resumeId).eq('user_id', userId).select().single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, resume: data });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
 // GET /api/resume?userId=xxx — list user's resumes
 export async function GET(request: Request) {
   try {
