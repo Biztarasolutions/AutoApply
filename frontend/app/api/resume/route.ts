@@ -95,6 +95,12 @@ export async function POST(request: Request) {
         console.error('Profile upsert error:', e);
       }
 
+      // Sanitize text — remove backslashes and control chars that break PostgreSQL unicode parsing
+      parsedText = parsedText
+        .replace(/\\/g, '')
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        .trim();
+
       // AI-parse the extracted text
       let parsedStructure = {};
       try {
