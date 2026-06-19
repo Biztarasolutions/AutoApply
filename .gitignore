@@ -16,3 +16,7 @@ yarn-error.log*
 .pnpm-debug.log*
 .idea/
 .vscode/
+
+# Netlify build artifacts
+.netlify/
+frontend/.netlify/

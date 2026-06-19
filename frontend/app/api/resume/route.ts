@@ -84,8 +84,7 @@ export async function POST(request: Request) {
       // AI-parse the extracted text
       let parsedStructure = {};
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { parseResume } = require('../../../../backend/ai/parser');
+        const { parseResume } = await import('@/lib/ai/parser');
         parsedStructure = await parseResume(parsedText);
       } catch (e) {
         console.error('AI parse error:', e);

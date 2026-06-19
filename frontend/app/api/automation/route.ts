@@ -80,9 +80,11 @@ export async function POST(request: Request) {
         [applicationId]
       );
 
-      // Static resolution of backend modules
-      const { runAutoApply } = require('../../../../backend/automation/runner');
-      
+      // Dynamically import runner so Turbopack doesn't statically trace it
+      const runnerPath = '../../../../backend/automation/runner';
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { runAutoApply } = require(runnerPath);
+
       // Execute in background
       runAutoApply(applicationId).catch((err: any) => {
         console.error('❌ Background automation runner failed:', err.message);
