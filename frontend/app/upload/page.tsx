@@ -89,6 +89,7 @@ export default function UploadPage() {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('userId', user.id);
+      formData.append('userEmail', user.email || '');
 
       setUploadProgress('Uploading to storage...');
       const res = await fetch('/api/resume', {

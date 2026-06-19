@@ -14,6 +14,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const userId = formData.get('userId') as string | null;
+    const userEmail = formData.get('userEmail') as string | null;
 
     if (!file || !userId) {
       return NextResponse.json({ error: 'file and userId are required' }, { status: 400 });
@@ -85,8 +86,7 @@ export async function POST(request: Request) {
 
       // Ensure profile row exists (resumes.user_id FK references profiles.id)
       try {
-        const { data: authUser } = await supabase.auth.admin.getUserById(userId);
-        const email = authUser?.user?.email || `${userId}@placeholder.local`;
+        const email = userEmail || `${userId}@autoapply.local`;
         await supabase
           .from('profiles')
           .upsert({ id: userId, email, updated_at: new Date().toISOString() }, { onConflict: 'id' });

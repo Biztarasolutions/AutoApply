@@ -73,7 +73,7 @@ export default function AuthPage() {
     
     // Simulate setting mock auth cookie / storage
     localStorage.setItem('sb-mock-session', JSON.stringify({
-      user: { id: 'd039f7be-e555-4d2b-be54-9bbbf6345689', email: 'developer@example.com' }
+      user: { id: '560c45b9-d3cb-4bbe-9958-ef68a3ba4848', email: 'rish6.jain@gmail.com' }
     }));
     
     // Wait a brief moment to make it feel real
