@@ -1,6 +1,4 @@
 const { GoogleGenAI } = require('@google/generative-ai');
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 /**
  * Extracts structured data from raw resume text.

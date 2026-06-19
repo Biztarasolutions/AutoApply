@@ -1,5 +1,3 @@
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 /**
  * Calculates ATS matching score, matching keywords, missing keywords, and profile suggestions.
