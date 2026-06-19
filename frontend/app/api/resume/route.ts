@@ -111,6 +111,17 @@ export async function POST(request: Request) {
         // Continue without storage — save text to DB only
       }
 
+      // Ensure profile row exists (resumes.user_id FK references profiles.id)
+      try {
+        const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+        const email = authUser?.user?.email || `${userId}@placeholder.local`;
+        await supabase
+          .from('profiles')
+          .upsert({ id: userId, email, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+      } catch (e) {
+        console.error('Profile upsert error:', e);
+      }
+
       // AI-parse the extracted text
       let parsedStructure = {};
       try {
@@ -132,8 +143,22 @@ export async function POST(request: Request) {
         .single();
 
       if (dbError) {
-        console.error('DB insert error:', dbError);
-        return NextResponse.json({ error: 'Failed to save resume to database' }, { status: 500 });
+        console.error('DB insert error:', dbError.message, dbError.code, dbError.details);
+        // Still return success with parsed text so user can use it even if DB save fails
+        return NextResponse.json({
+          success: true,
+          resume: {
+            id: `local-${Date.now()}`,
+            user_id: userId,
+            file_path: safeFileName,
+            parsed_text: parsedText,
+            parsed_structure: parsedStructure,
+            created_at: new Date().toISOString(),
+          },
+          parsedText,
+          parsedStructure,
+          warning: `Resume parsed successfully but could not save to database: ${dbError.message}`,
+        });
       }
 
       return NextResponse.json({
