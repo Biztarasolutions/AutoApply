@@ -42,7 +42,8 @@ export async function POST(request: Request) {
 
     if (file.type === 'application/pdf') {
       try {
-        const pdfParse = require('pdf-parse');
+        // Use internal lib path to avoid pdf-parse's test-file read on init (breaks serverless)
+        const pdfParse = require('pdf-parse/lib/pdf-parse.js');
         const pdfData = await pdfParse(buffer);
         parsedText = pdfData.text;
       } catch (e) {
