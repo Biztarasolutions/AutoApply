@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { Client } from 'pg';
-import path from 'path';
 
 // Local in-memory store for mock applications when database is offline
 const mockApplicationsDb: Record<string, any> = {};
@@ -80,12 +79,8 @@ export async function POST(request: Request) {
         [applicationId]
       );
 
-      // Dynamically import runner so Turbopack doesn't statically trace it
-      const runnerPath = '../../../../backend/automation/runner';
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { runAutoApply } = require(runnerPath);
+      const { runAutoApply } = await import('@/lib/automation/runner');
 
-      // Execute in background
       runAutoApply(applicationId).catch((err: any) => {
         console.error('❌ Background automation runner failed:', err.message);
       });
