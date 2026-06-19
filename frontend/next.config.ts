@@ -4,6 +4,8 @@ import path from "path";
 const nextConfig: NextConfig = {
   serverExternalPackages: [
     "@google/generative-ai",
+    "@google/genai",
+    "pdfjs-dist",
     "mammoth",
     "pg",
     "dotenv",
