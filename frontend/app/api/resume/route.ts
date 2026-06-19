@@ -42,10 +42,20 @@ export async function POST(request: Request) {
 
     if (file.type === 'application/pdf') {
       try {
-        // Use internal lib path to avoid pdf-parse's test-file read on init (breaks serverless)
-        const pdfParse = require('pdf-parse/lib/pdf-parse.js');
-        const pdfData = await pdfParse(buffer);
-        parsedText = pdfData.text;
+        // Use Gemini multimodal to extract PDF text — works in all serverless environments
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '');
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+        const result = await model.generateContent([
+          {
+            inlineData: {
+              mimeType: 'application/pdf',
+              data: buffer.toString('base64'),
+            },
+          },
+          'Extract all text from this resume PDF. Return the raw text content only, preserving structure and formatting as much as possible. Do not summarize or interpret — just extract the text.',
+        ]);
+        parsedText = result.response.text();
       } catch (e) {
         console.error('PDF parse error:', e);
         parsedText = '[PDF text extraction failed — please paste resume text manually]';
