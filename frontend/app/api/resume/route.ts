@@ -42,18 +42,10 @@ export async function POST(request: Request) {
 
     if (file.type === 'application/pdf') {
       try {
-        // pdfjs-dist: pure JS PDF parser, no native deps, works in all serverless environments
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs' as any);
-        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
-        const pdf = await loadingTask.promise;
-        const textParts: string[] = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          const pageText = content.items.map((item: any) => item.str).join(' ');
-          textParts.push(pageText);
-        }
-        parsedText = textParts.join('\n').replace(/\s+/g, ' ').trim();
+        // unpdf: serverless-safe PDF text extraction (bundles pdfjs with all browser polyfills)
+        const { extractText } = await import('unpdf');
+        const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
+        parsedText = text.replace(/\s+/g, ' ').trim();
         console.log('PDF extraction success, length:', parsedText.length);
       } catch (e: any) {
         console.error('PDF parse error:', e?.message || e);
