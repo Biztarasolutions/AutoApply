@@ -8,7 +8,7 @@ import {
   Loader, FilePlus, CheckCircle2, AlertCircle,
   Plus, Tag, Briefcase, GraduationCap, ChevronDown, ChevronUp,
   Target, TrendingUp, Award, User, RefreshCw, Link, Star, FolderOpen,
-  Eye, Printer, LayoutTemplate,
+  Eye, Printer, LayoutTemplate, Upload,
 } from 'lucide-react';
 
 type TemplateId = 'classic' | 'modern' | 'minimal';
@@ -597,6 +597,9 @@ export default function ResumesPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>('classic');
   const [atsRecs, setAtsRecs] = useState<{ recommendations: string[]; missingKeywords: string[] }>({ recommendations: [], missingKeywords: [] });
   const printRef = useRef<HTMLDivElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStep, setUploadStep] = useState('');
 
   useEffect(() => {
     const init = async () => {
@@ -708,6 +711,32 @@ export default function ResumesPage() {
     setTimeout(() => { win.print(); }, 600);
   };
 
+  const handleUploadFile = async (file: File) => {
+    if (!user) return;
+    const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    if (!allowed.includes(file.type)) { setMsg({ type: 'error', text: 'Only PDF, DOCX, and TXT files are supported.' }); return; }
+    if (file.size > 5 * 1024 * 1024) { setMsg({ type: 'error', text: 'File must be under 5MB.' }); return; }
+    setIsUploading(true);
+    setUploadStep('Uploading & parsing...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('userId', user.id);
+      formData.append('userEmail', user.email || '');
+      const res = await fetch('/api/resume', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Upload failed');
+      setMsg({ type: 'success', text: `"${file.name}" uploaded and parsed successfully.` });
+      await fetchResumes(user.id);
+    } catch (e: any) {
+      setMsg({ type: 'error', text: e.message || 'Upload failed. Please try again.' });
+    } finally {
+      setIsUploading(false);
+      setUploadStep('');
+      if (uploadInputRef.current) uploadInputRef.current.value = '';
+    }
+  };
+
   // Edit helpers
   const setField = (field: string, value: any) => { setEditStructure((p: any) => ({ ...p, [field]: value })); setIsDirty(true); };
   const addSkill = () => { const s = newSkill.trim(); if (!s) return; setEditStructure((p: any) => ({ ...p, skills: [...(p.skills || []), s] })); setNewSkill(''); setIsDirty(true); };
@@ -739,9 +768,27 @@ export default function ResumesPage() {
             <h1 className="grad-text" style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.25rem' }}>My Resumes</h1>
             <p style={{ color: 'var(--text-muted)' }}>Edit, preview templates, and download your resume.</p>
           </div>
-          <button onClick={() => router.push('/upload')} style={{ ...btnPrimary, padding: '0.65rem 1.25rem', fontSize: '0.9rem' }}>
-            <Plus size={16} /> Upload New
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {isUploading && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--color-primary)' }}>
+                <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> {uploadStep}
+              </span>
+            )}
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept=".pdf,.docx,.txt"
+              style={{ display: 'none' }}
+              onChange={e => e.target.files?.[0] && handleUploadFile(e.target.files[0])}
+            />
+            <button
+              onClick={() => uploadInputRef.current?.click()}
+              disabled={isUploading}
+              style={{ ...btnPrimary, padding: '0.65rem 1.25rem', fontSize: '0.9rem', opacity: isUploading ? 0.6 : 1 }}
+            >
+              <Upload size={16} /> Upload New
+            </button>
+          </div>
         </div>
 
         {/* Alert */}
@@ -763,7 +810,9 @@ export default function ResumesPage() {
             <FilePlus size={48} style={{ color: 'var(--text-muted)', margin: '0 auto 1rem', display: 'block', opacity: 0.4 }} />
             <p style={{ color: 'var(--text-main)', fontWeight: 600, marginBottom: '0.4rem' }}>No resumes yet</p>
             <p style={{ color: 'var(--text-muted)', marginBottom: '1.25rem', fontSize: '0.9rem' }}>Upload your first resume to get started.</p>
-            <button onClick={() => router.push('/upload')} style={{ ...btnPrimary, padding: '0.7rem 1.75rem' }}>Upload Resume</button>
+            <button onClick={() => uploadInputRef.current?.click()} disabled={isUploading} style={{ ...btnPrimary, padding: '0.7rem 1.75rem' }}>
+              <Upload size={15} /> Upload Resume
+            </button>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr 230px', gap: '1.25rem', alignItems: 'start' }}>
