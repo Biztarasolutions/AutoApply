@@ -75,8 +75,8 @@ export default function Navbar() {
                 </li>
                 <li>
                   <Link
-                    href="/upload"
-                    className={`nav-link ${pathname === '/upload' ? 'active' : ''} flex-center`}
+                    href="/resumes"
+                    className={`nav-link ${pathname === '/resumes' || pathname === '/upload' ? 'active' : ''} flex-center`}
                     style={{ gap: '0.25rem' }}
                   >
                     <Upload size={16} />
