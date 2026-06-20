@@ -3,7 +3,6 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export async function parseResume(resumeText: string) {
   const apiKey = process.env.GEMINI_API_KEY;
 
-  // AQ. prefix = OAuth token, not a valid Gemini API key
   if (!apiKey || apiKey === 'your_gemini_api_key' || apiKey.startsWith('AQ.')) {
     return extractResumeFromText(resumeText);
   }
@@ -33,8 +32,7 @@ export async function parseResume(resumeText: string) {
   "certifications": [{ "name": "string", "issuer": "string", "date": "string", "url": "string" }],
   "achievements": ["string"]
 }
-
-Return only valid JSON. Use empty string or empty array for missing fields. Extract every skill mentioned.
+Return only valid JSON. Empty string or empty array for missing fields.
 
 Resume:
 ---
@@ -53,89 +51,120 @@ ${resumeText.slice(0, 8000)}
 
 function mergeStructures(ai: any, fallback: any) {
   return {
-    full_name: ai.full_name || fallback.full_name,
-    email: ai.email || fallback.email,
-    phone: ai.phone || fallback.phone,
-    linkedin: ai.linkedin || fallback.linkedin,
-    github: ai.github || fallback.github,
-    website: ai.website || fallback.website,
-    location: ai.location || fallback.location,
-    headline: ai.headline || fallback.headline,
-    bio: ai.bio || fallback.bio,
-    skills: ai.skills?.length ? ai.skills : fallback.skills,
-    experience: ai.experience?.length ? ai.experience : fallback.experience,
-    education: ai.education?.length ? ai.education : fallback.education,
-    projects: ai.projects?.length ? ai.projects : fallback.projects,
+    full_name:      ai.full_name      || fallback.full_name,
+    email:          ai.email          || fallback.email,
+    phone:          ai.phone          || fallback.phone,
+    linkedin:       ai.linkedin       || fallback.linkedin,
+    github:         ai.github         || fallback.github,
+    website:        ai.website        || fallback.website,
+    location:       ai.location       || fallback.location,
+    headline:       ai.headline       || fallback.headline,
+    bio:            ai.bio            || fallback.bio,
+    skills:         ai.skills?.length         ? ai.skills         : fallback.skills,
+    experience:     ai.experience?.length     ? ai.experience     : fallback.experience,
+    education:      ai.education?.length      ? ai.education      : fallback.education,
+    projects:       ai.projects?.length       ? ai.projects       : fallback.projects,
     certifications: ai.certifications?.length ? ai.certifications : fallback.certifications,
-    achievements: ai.achievements?.length ? ai.achievements : fallback.achievements,
+    achievements:   ai.achievements?.length   ? ai.achievements   : fallback.achievements,
   };
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Heuristic extractor — no AI needed
-// ────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Section detection — handles both line-structured and single-paragraph PDFs
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface TextSection { name: string; content: string }
+
+/**
+ * Section keywords, ordered longest-first so "Work Experience" wins over
+ * "Experience" when both appear in the text.
+ */
+const SECTION_DEFS: Array<{ name: string; keywords: string[] }> = [
+  { name: 'summary',        keywords: ['Professional Summary', 'Career Summary', 'Executive Summary', 'Summary', 'Profile', 'Objective', 'About Me', 'Overview', 'Career Objective'] },
+  { name: 'skills',         keywords: ['Technical Skills', 'Core Competencies', 'Key Skills', 'Skills', 'Expertise', 'Technologies', 'Tools & Technologies'] },
+  { name: 'experience',     keywords: ['Work Experience', 'Professional Experience', 'Employment History', 'Work History', 'Career History', 'Experience', 'Employment'] },
+  { name: 'education',      keywords: ['Academic Background', 'Educational Background', 'Education', 'Academic Qualifications', 'Qualifications', 'Schooling'] },
+  { name: 'projects',       keywords: ['Notable Projects', 'Key Projects', 'Personal Projects', 'Academic Projects', 'Projects'] },
+  { name: 'certifications', keywords: ['Professional Certifications', 'Certifications', 'Certificates', 'Certification', 'Credentials', 'Licenses'] },
+  { name: 'achievements',   keywords: ['Key Achievements', 'Notable Achievements', 'Accomplishments', 'Honors & Awards', 'Honors', 'Awards', 'Recognition'] },
+];
+
+function splitIntoSections(text: string): TextSection[] {
+  const hits: Array<{ name: string; headerStart: number; headerEnd: number }> = [];
+
+  for (const { name, keywords } of SECTION_DEFS) {
+    // Try longer keywords first so "Work Experience" beats "Experience"
+    for (const kw of [...keywords].sort((a, b) => b.length - a.length)) {
+      // Use word-boundary style: keyword must not be preceded or followed by a letter
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+      const re = new RegExp(`(?:^|(?<![a-zA-Z]))${escaped}(?![a-zA-Z])`, 'i');
+      const m = re.exec(text);
+      if (m) {
+        hits.push({ name, headerStart: m.index, headerEnd: m.index + m[0].length });
+        break; // found this section; don't try shorter keywords
+      }
+    }
+  }
+
+  if (hits.length === 0) return [{ name: 'raw', content: text }];
+
+  hits.sort((a, b) => a.headerStart - b.headerStart);
+
+  return hits.map((h, i) => ({
+    name: h.name,
+    content: text
+      .slice(h.headerEnd, hits[i + 1]?.headerStart ?? text.length)
+      .replace(/^[\s:–\-]+/, '')
+      .trim(),
+  }));
+}
+
+function getSec(sections: TextSection[], name: string): string {
+  return sections.find(s => s.name === name)?.content ?? '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main heuristic extractor
+// ─────────────────────────────────────────────────────────────────────────────
 
 export function extractResumeFromText(rawText: string) {
-  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-  const fullText = lines.join('\n');
+  const text = rawText.trim();
 
-  // ── Contact fields ──────────────────────────────────────────────────────
-  const email = (fullText.match(/([a-zA-Z0-9._+%-]+@[a-zA-Z0-9._-]+\.[a-zA-Z]{2,})/)?.[0] || '').toLowerCase();
-  const phone = extractPhone(fullText);
-  const linkedin = fullText.match(/linkedin\.com\/in\/([a-zA-Z0-9\-_]+)/i)?.[0]
-    ? 'https://www.' + fullText.match(/linkedin\.com\/in\/([a-zA-Z0-9\-_]+)/i)![0]
-    : (fullText.match(/linkedin[^\s,|]{0,30}/i)?.[0]?.replace(/^.*?(linkedin)/i, 'https://www.linkedin') || '');
-  const github = fullText.match(/github\.com\/([a-zA-Z0-9\-_]+)/i)?.[0]
-    ? 'https://' + fullText.match(/github\.com\/([a-zA-Z0-9\-_]+)/i)![0]
-    : '';
-  const website = extractWebsite(fullText, email, linkedin, github);
-  const location = extractLocation(fullText);
+  const email    = extractEmail(text);
+  const phone    = extractPhone(text);
+  const linkedin = extractLinkedIn(text);
+  const github   = extractGitHub(text);
+  const website  = extractWebsite(text);
+  const sections = splitIntoSections(text);
 
-  // ── Name ─────────────────────────────────────────────────────────────────
-  const full_name = extractName(lines, email, phone);
+  const { full_name, headline, location } = extractContactBlock(text, email);
 
-  // ── Find section boundaries ───────────────────────────────────────────────
-  const sections = detectSections(lines);
+  const bio            = getSec(sections, 'summary').slice(0, 600);
+  const skills         = extractSkills(getSec(sections, 'skills'), text);
+  const experience     = extractExperience(getSec(sections, 'experience'));
+  const education      = extractEducation(getSec(sections, 'education'));
+  const projects       = extractProjects(getSec(sections, 'projects'));
+  const certifications = extractCertifications(getSec(sections, 'certifications'));
+  const achievements   = extractAchievements(text, experience);
 
-  // ── Headline ─────────────────────────────────────────────────────────────
-  const headline = extractHeadline(lines, full_name, sections);
-
-  // ── Bio/Summary ───────────────────────────────────────────────────────────
-  const bio = extractSection(lines, sections, 'summary');
-
-  // ── Skills ────────────────────────────────────────────────────────────────
-  const skills = extractSkills(lines, sections, fullText);
-
-  // ── Experience ────────────────────────────────────────────────────────────
-  const experience = extractExperience(lines, sections);
-
-  // ── Education ─────────────────────────────────────────────────────────────
-  const education = extractEducation(lines, sections);
-
-  // ── Projects ──────────────────────────────────────────────────────────────
-  const projects = extractProjects(lines, sections);
-
-  // ── Certifications ────────────────────────────────────────────────────────
-  const certifications = extractCertifications(lines, sections);
-
-  // ── Achievements ──────────────────────────────────────────────────────────
-  const achievements = extractAchievements(lines, sections);
-
-  return {
-    full_name, email, phone, linkedin, github, website, location,
-    headline, bio, skills, experience, education,
-    projects, certifications, achievements,
-  };
+  return { full_name, email, phone, linkedin, github, website, location, headline, bio, skills, experience, education, projects, certifications, achievements };
 }
 
-// ── Phone ──────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Contact field extractors
+// ─────────────────────────────────────────────────────────────────────────────
+
+function extractEmail(text: string): string {
+  return (text.match(/([a-zA-Z0-9._+%-]+@[a-zA-Z0-9._-]+\.[a-zA-Z]{2,})/)?.[0] ?? '').toLowerCase();
+}
+
 function extractPhone(text: string): string {
-  // Match phone numbers: must have 7+ digits, not look like a year range
+  // Try specific patterns first (Indian, then US, then generic)
   const patterns = [
-    /\+?[1-9]\d{0,3}[\s\-.]?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}/,  // intl format
-    /\b(?:\+91[\s\-]?)?[6-9]\d{9}\b/,  // Indian mobile
-    /\b\d{3}[\s\-]\d{3}[\s\-]\d{4}\b/,  // US format
-    /\b91[\s]?\d{10}\b/,  // Indian with country code
+    /\+91[\s\-]?[6-9]\d{9}/,
+    /\b91\s?[6-9]\d{9}\b/,
+    /\b[6-9]\d{9}\b/,
+    /\+?1?\s?\(?\d{3}\)?[\s\-]\d{3}[\s\-]\d{4}/,
   ];
   for (const p of patterns) {
     const m = text.match(p);
@@ -144,394 +173,353 @@ function extractPhone(text: string): string {
   return '';
 }
 
-// ── Website ────────────────────────────────────────────────────────────────
-function extractWebsite(text: string, email: string, linkedin: string, github: string): string {
-  const urlMatch = text.match(/https?:\/\/(?!linkedin|github)[a-zA-Z0-9\-.]+\.[a-zA-Z]{2,}(?:\/[^\s,|)]*)?/i);
-  return urlMatch?.[0] || '';
+function extractLinkedIn(text: string): string {
+  const m = text.match(/linkedin\.com\/in\/([a-zA-Z0-9_\-]+)/i);
+  return m ? `https://www.linkedin.com/in/${m[1]}` : '';
 }
 
-// ── Location ──────────────────────────────────────────────────────────────
-function extractLocation(text: string): string {
-  // Common city names or "City, State/Country" pattern
-  const m = text.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*(?:[A-Z]{2}|[A-Z][a-z]+))\b/);
-  if (m) return m[0];
-  // Indian cities
-  const indianCities = ['Bangalore', 'Mumbai', 'Delhi', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata', 'Noida', 'Gurgaon'];
-  for (const city of indianCities) {
-    if (new RegExp(`\\b${city}\\b`, 'i').test(text)) return city + ', India';
-  }
-  return '';
+function extractGitHub(text: string): string {
+  const m = text.match(/github\.com\/([a-zA-Z0-9_\-]+)/i);
+  return m ? `https://github.com/${m[1]}` : '';
 }
 
-// ── Name extraction — multi-strategy ───────────────────────────────────────
-function extractName(lines: string[], email: string, phone: string): string {
-  // Strategy 1: Look for "FirstName LastName" pattern across ALL lines
-  // (2-4 words, each Capitalized, alpha only, 4-50 chars total)
-  const namePattern = /^([A-Z][a-z]{1,20}(?:\s+[A-Z][a-z]{1,20}){1,3})$/;
+function extractWebsite(text: string): string {
+  const m = text.match(/https?:\/\/(?!(?:www\.)?(?:linkedin|github)\.com)[a-zA-Z0-9\-.]+\.[a-zA-Z]{2,}(?:\/[^\s,|)]*)?/i);
+  return m?.[0] ?? '';
+}
 
-  // Collect candidates with their line index
-  const candidates: Array<{ name: string; score: number }> = [];
+// ─────────────────────────────────────────────────────────────────────────────
+// Name, headline, and location
+// ─────────────────────────────────────────────────────────────────────────────
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    // Try exact match first
-    if (namePattern.test(line) && line.length >= 5 && line.length <= 50) {
-      let score = 100 - i; // prefer earlier lines
-      // Bonus if email or phone appears nearby
-      if (Math.abs(i - lines.findIndex(l => l.includes('@'))) <= 5) score += 30;
-      if (Math.abs(i - lines.findIndex(l => phone && l.includes(phone.slice(0, 8)))) <= 5) score += 20;
-      candidates.push({ name: line, score });
-    }
-    // Try line that starts with name and has title/separator after
-    const titleSep = line.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s*[|\-–—,]/);
-    if (titleSep) {
-      candidates.push({ name: titleSep[1].trim(), score: 80 - i });
+/**
+ * Words that should NEVER appear as a person's first or last name.
+ * Used to filter false-positive 2-word name candidates.
+ */
+const NON_NAME_WORDS = new Set([
+  // Title / seniority words
+  'Senior', 'Junior', 'Lead', 'Principal', 'Staff', 'Chief', 'Head', 'Associate',
+  // Domain words
+  'Analytics', 'Analyst', 'Data', 'Business', 'Software', 'Product', 'Solutions',
+  'Application', 'Development', 'Professional', 'Independent', 'Consulting',
+  'Freelance', 'Technical', 'Corporate', 'Executive', 'Research', 'Platform',
+  // Job titles
+  'Manager', 'Director', 'Engineer', 'Specialist', 'Scientist', 'Architect',
+  'Consultant', 'Developer', 'Designer', 'Officer', 'Intern',
+  // Resume section words
+  'Summary', 'Skills', 'Education', 'Experience', 'Certification', 'Projects',
+  'Objective', 'Profile', 'Overview', 'Resume', 'Curriculum',
+  // Month names — bleed in from job dates extracted before the contact block
+  'January', 'February', 'March', 'April', 'May', 'June', 'July',
+  'August', 'September', 'October', 'November', 'December',
+  'Jan', 'Feb', 'Mar', 'Apr', 'Jun', 'Jul', 'Aug', 'Sep', 'Sept', 'Oct', 'Nov', 'Dec',
+]);
+
+function extractContactBlock(text: string, email: string): { full_name: string; headline: string; location: string } {
+  const full_name = findName(text, email);
+  const headline  = findHeadline(text, full_name);
+  const location  = findLocation(text, email);
+  return { full_name, headline, location };
+}
+
+function findName(text: string, email: string): string {
+  if (!email) return '';
+  const emailIdx = text.indexOf(email);
+  if (emailIdx < 0) return '';
+
+  // In sidebar-layout PDFs the name appears in the contact block just before email.
+  // Look back up to 400 chars.
+  const lookback = text.slice(Math.max(0, emailIdx - 400), emailIdx);
+
+  // Strip noise: URLs, domain names, month names, bare numbers
+  const cleaned = lookback
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/\S+\.(com|io|net|org|in|co)\S*/gi, ' ')
+    .replace(/\bProjects?\b/gi, ' ')
+    .replace(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b/gi, ' ')
+    .replace(/\b\d[\d\s./\-]+/g, ' ')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Find all 2-word Title-Cased pairs where neither word is a known non-name
+  const PAIR_RE = /\b([A-Z][a-z]{1,19})\s+([A-Z][a-z]{1,19})\b/g;
+  const candidates: Array<{ name: string; idx: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = PAIR_RE.exec(cleaned)) !== null) {
+    if (!NON_NAME_WORDS.has(m[1]) && !NON_NAME_WORDS.has(m[2])) {
+      candidates.push({ name: `${m[1]} ${m[2]}`, idx: m.index });
     }
   }
 
   if (candidates.length > 0) {
-    candidates.sort((a, b) => b.score - a.score);
+    // Pick rightmost candidate (closest to email)
+    candidates.sort((a, b) => b.idx - a.idx);
     return candidates[0].name;
   }
 
-  // Strategy 2: Derive from email (john.doe@example.com → John Doe)
-  if (email) {
-    const localPart = email.split('@')[0].replace(/[._\-+]/g, ' ');
-    const words = localPart.split(' ').filter(w => w.length > 1 && /^[a-z]+$/i.test(w));
-    if (words.length >= 2) {
-      return words.map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-    }
-  }
-
-  // Strategy 3: First line that looks like a name (more permissive)
-  for (const line of lines.slice(0, 10)) {
-    const cleaned = line.replace(/[^a-zA-Z\s]/g, '').trim();
-    const words = cleaned.split(/\s+/).filter(Boolean);
-    if (words.length >= 2 && words.length <= 4 && cleaned.length >= 5 && cleaned.length <= 50) {
-      if (words.every(w => /^[A-Z]/.test(w) && w.length >= 2)) {
-        return cleaned;
-      }
-    }
-  }
-
-  return '';
-}
-
-// ── Section detection ─────────────────────────────────────────────────────
-type SectionName = 'summary' | 'skills' | 'experience' | 'education' | 'projects' | 'certifications' | 'achievements' | 'awards';
-
-const SECTION_PATTERNS: Record<SectionName, RegExp> = {
-  summary: /^(summary|professional\s+summary|profile|objective|about\s+me|career\s+objective|overview)/i,
-  skills: /^(skills?|technical\s+skills?|core\s+competencies|key\s+skills?|expertise|technologies)/i,
-  experience: /^(work\s+experience|experience|employment|professional\s+experience|work\s+history|career\s+history|positions?)/i,
-  education: /^(education|academic|qualification|schooling|degrees?)/i,
-  projects: /^(projects?|personal\s+projects?|key\s+projects?|notable\s+projects?|portfolio)/i,
-  certifications: /^(certifications?|certificates?|licenses?|credentials?|accreditations?)/i,
-  achievements: /^(achievements?|accomplishments?|honors?|awards?|recognition)/i,
-  awards: /^(awards?|honors?|recognition|accolades)/i,
-};
-
-interface SectionBounds {
-  start: number;
-  end: number;
-  name: SectionName;
-}
-
-function detectSections(lines: string[]): SectionBounds[] {
-  const found: Array<{ idx: number; name: SectionName }> = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    // Section headers are usually short (< 60 chars) and match a known pattern
-    if (l.length > 60) continue;
-    for (const [name, pattern] of Object.entries(SECTION_PATTERNS)) {
-      if (pattern.test(l)) {
-        found.push({ idx: i, name: name as SectionName });
-        break;
-      }
-    }
-  }
-
-  return found.map((s, i) => ({
-    name: s.name,
-    start: s.idx + 1,
-    end: found[i + 1]?.idx ?? lines.length,
-  }));
-}
-
-function getSectionLines(lines: string[], sections: SectionBounds[], name: SectionName): string[] {
-  const s = sections.find(s => s.name === name);
-  if (!s) return [];
-  return lines.slice(s.start, s.end).filter(Boolean);
-}
-
-// ── Headline ──────────────────────────────────────────────────────────────
-function extractHeadline(lines: string[], name: string, sections: SectionBounds[]): string {
-  // Look for "Name | Title" pattern first
-  for (const line of lines) {
-    const sep = line.match(/^[A-Z][a-z]+.*?[|\-–—]\s*(.{5,80})$/);
-    if (sep && sep[1] && !sep[1].includes('@') && !/\d{4}/.test(sep[1].slice(-5))) {
-      return sep[1].trim();
-    }
-  }
-  // Line after name
-  if (name) {
-    const nameIdx = lines.findIndex(l => l === name || l.startsWith(name));
-    if (nameIdx >= 0) {
-      for (let i = nameIdx + 1; i < Math.min(nameIdx + 4, lines.length); i++) {
-        const l = lines[i];
-        if (l.length > 5 && l.length < 100 && !l.includes('@') && !/^\d/.test(l)) {
-          return l;
-        }
-      }
-    }
-  }
-  // Check for "Senior X" or "X Analyst" style line in first 15 lines
-  for (const l of lines.slice(0, 15)) {
-    if (/\b(senior|lead|principal|staff|associate|junior|chief|head|director|manager|analyst|engineer|developer|consultant|specialist|professional)\b/i.test(l)
-      && l.length < 80 && !l.includes('@')) {
-      return l;
-    }
+  // Fallback: derive from email local part (john.doe@... → John Doe)
+  const local = email.split('@')[0].replace(/[._\-+\d]/g, ' ').trim();
+  const words = local.split(/\s+/).filter(w => w.length > 1);
+  if (words.length >= 2) {
+    return words.slice(0, 2).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
   }
   return '';
 }
 
-// ── Bio/Summary ───────────────────────────────────────────────────────────
-function extractSection(lines: string[], sections: SectionBounds[], name: SectionName): string {
-  const sLines = getSectionLines(lines, sections, name);
-  if (!sLines.length) return '';
-  return sLines.slice(0, 8).join(' ').slice(0, 600).trim();
+function findHeadline(text: string, name: string): string {
+  if (!name) return '';
+  const nameIdx = text.indexOf(name);
+  if (nameIdx < 0) return '';
+
+  // The professional title usually appears immediately after the name
+  const after = text.slice(nameIdx + name.length, nameIdx + name.length + 120).replace(/^\s+/, '');
+
+  // Match a short title-case phrase; reject anything that looks like a phone/email/date
+  const m = after.match(/^([A-Z][^\n@\d]{5,70}?)(?=\s+\d|\s+\S+@|\s*$)/);
+  if (m) {
+    const c = m[1].trim();
+    if (c.length < 80 && !/@/.test(c) && !/^\d/.test(c)) return c;
+  }
+  return '';
 }
 
-// ── Skills ────────────────────────────────────────────────────────────────
-const SKILL_KEYWORDS = [
-  // Programming Languages
-  'Python', 'Java', 'JavaScript', 'TypeScript', 'C++', 'C#', 'Go', 'Rust', 'Swift', 'Kotlin', 'Scala', 'Ruby', 'PHP', 'R', 'MATLAB', 'Perl', 'Bash', 'Shell',
-  // Web/Frontend
-  'React', 'Next.js', 'Vue', 'Angular', 'HTML', 'CSS', 'Sass', 'Tailwind', 'Bootstrap', 'jQuery', 'Redux', 'GraphQL', 'REST API', 'Node.js', 'Express', 'Django', 'Flask', 'FastAPI', 'Spring Boot',
-  // Data & Analytics
-  'SQL', 'Excel', 'Power BI', 'Tableau', 'Looker', 'Qlik', 'Pandas', 'NumPy', 'SciPy', 'Matplotlib', 'Seaborn', 'Plotly', 'Spark', 'PySpark', 'Hadoop', 'Hive', 'Kafka', 'Airflow', 'dbt', 'Alteryx',
-  // Databases
-  'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Snowflake', 'BigQuery', 'Redshift', 'Databricks', 'Oracle', 'DynamoDB', 'Elasticsearch', 'Cassandra',
-  // Cloud & DevOps
-  'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Terraform', 'Ansible', 'Jenkins', 'GitHub Actions', 'GitLab CI', 'CI/CD', 'Linux', 'Nginx',
-  // AI/ML
-  'Machine Learning', 'Deep Learning', 'NLP', 'TensorFlow', 'PyTorch', 'Keras', 'Scikit-learn', 'XGBoost', 'LightGBM', 'OpenAI', 'LangChain', 'Hugging Face',
-  // Data Science
-  'Statistics', 'A/B Testing', 'Regression', 'Classification', 'Clustering', 'Time Series', 'Forecasting', 'Predictive Modeling', 'Feature Engineering', 'CLTV', 'Churn Prediction', 'Cohort Analysis',
-  // Management
-  'Agile', 'Scrum', 'Kanban', 'JIRA', 'Confluence', 'Product Management', 'Project Management', 'Stakeholder Management', 'KPI', 'OKR',
-  // Analytics specific
-  'Retail Analytics', 'Customer Analytics', 'Marketing Analytics', 'Business Intelligence', 'Data Visualization', 'Dashboard', 'Reporting',
-  // Tools
-  'Git', 'GitHub', 'Figma', 'Postman', 'VS Code', 'Jupyter', 'Databricks', 'Colab', 'Cursor', 'Claude',
-  // Finance
-  'Financial Modeling', 'Valuation', 'Bloomberg', 'Excel VBA', 'SAP',
+function findLocation(text: string, email: string): string {
+  const ei = email ? text.indexOf(email) : -1;
+  const win = ei >= 0 ? text.slice(ei, Math.min(text.length, ei + 200)) : text.slice(0, 500);
+
+  // "City, Country" or "City, ST" patterns
+  const m = win.match(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*(?:[A-Z][a-z]+|[A-Z]{2,3}))\b/);
+  if (m) return m[1];
+
+  // Common Indian cities
+  for (const city of ['Bangalore', 'Bengaluru', 'Mumbai', 'Delhi', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata', 'Noida', 'Gurgaon', 'Gurugram']) {
+    if (new RegExp(`\\b${city}\\b`, 'i').test(win)) return `${city}, India`;
+  }
+  return '';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Skills
+// ─────────────────────────────────────────────────────────────────────────────
+
+const KNOWN_SKILLS = [
+  'Python', 'Java', 'JavaScript', 'TypeScript', 'C++', 'C#', 'Go', 'R', 'MATLAB', 'Scala', 'Rust', 'Swift', 'Kotlin', 'PHP', 'Ruby', 'Bash', 'Shell',
+  'React', 'Next.js', 'Vue', 'Angular', 'HTML', 'CSS', 'Tailwind', 'Node.js', 'Express', 'Django', 'Flask', 'FastAPI', 'REST API', 'GraphQL',
+  'SQL', 'Excel', 'Power BI', 'Tableau', 'Looker', 'Qlik', 'Pandas', 'NumPy', 'PySpark', 'Spark', 'Hadoop', 'Hive', 'Kafka', 'Airflow', 'dbt', 'Alteryx',
+  'PostgreSQL', 'MySQL', 'MongoDB', 'Redis', 'Snowflake', 'BigQuery', 'Redshift', 'Databricks', 'Oracle', 'DynamoDB', 'Elasticsearch',
+  'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Terraform', 'Git', 'GitHub', 'GitLab', 'CI/CD', 'Jenkins', 'Linux',
+  'Machine Learning', 'Deep Learning', 'NLP', 'TensorFlow', 'PyTorch', 'Keras', 'Scikit-learn', 'XGBoost', 'LightGBM', 'OpenAI', 'LangChain',
+  'Statistics', 'A/B Testing', 'Regression', 'Classification', 'Clustering', 'Time Series', 'Demand Forecasting', 'Predictive Modeling', 'Feature Engineering',
+  'CLTV', 'Churn Prediction', 'Cohort Analysis', 'Customer Analytics', 'Retail Analytics', 'Space Planning', 'Assortment Analytics', 'Revenue Optimization',
+  'Agile', 'Scrum', 'JIRA', 'Confluence', 'Stakeholder Management', 'KPI', 'OKR', 'Product Management', 'Project Management',
+  'Business Intelligence', 'Data Visualization', 'Reporting', 'Dashboarding',
+  'Claude', 'Copilot', 'Cursor',
 ];
 
-function extractSkills(lines: string[], sections: SectionBounds[], fullText: string): string[] {
-  const skillsLines = getSectionLines(lines, sections, 'skills');
+function extractSkills(skillsSection: string, fullText: string): string[] {
   const fromSection: string[] = [];
-
-  for (const l of skillsLines) {
-    // Handle categorized skills: "Category: skill1 | skill2 | skill3"
-    const afterColon = l.includes(':') ? l.split(':').slice(1).join(':') : l;
-    const items = afterColon
-      .split(/[,|•·\t/]/)
-      .map(s => s.trim())
-      .filter(s => s.length >= 2 && s.length <= 40 && !/^(and|the|or|in|of|with|for)$/i.test(s));
-    fromSection.push(...items);
+  if (skillsSection) {
+    // Strip category labels like "Programming & Data:" before parsing items
+    const stripped = skillsSection
+      .replace(/[A-Z][a-zA-Z\s&]+:/g, '|')
+      .replace(/[()]/g, ' ');
+    stripped
+      .split(/[|,•·\t\n]/)
+      .map((s: string) => s.trim())
+      .filter((s: string) => s.length >= 2 && s.length <= 40 && !/^\d+$/.test(s))
+      .filter((s: string) => !/^(and|the|or|in|of|with|for|&)$/i.test(s))
+      .forEach((s: string) => fromSection.push(s));
   }
 
-  // Keyword scan across full text
-  const fromKeywords = SKILL_KEYWORDS.filter(sk =>
+  const fromKeywords = KNOWN_SKILLS.filter(sk =>
     new RegExp('\\b' + sk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(fullText)
   );
 
-  // Merge: section skills first (preserve exact casing), then keywords not already present
   const merged = [...fromSection];
   for (const kw of fromKeywords) {
-    if (!merged.some(s => s.toLowerCase() === kw.toLowerCase())) {
-      merged.push(kw);
-    }
+    if (!merged.some(s => s.toLowerCase() === kw.toLowerCase())) merged.push(kw);
   }
 
-  return [...new Set(merged)].filter(s => s.length >= 2);
+  return [...new Set(merged)].filter((s: string) => s.length >= 2 && s.length <= 40);
 }
 
-// ── Experience ─────────────────────────────────────────────────────────────
-function extractExperience(lines: string[], sections: SectionBounds[]): any[] {
-  const expLines = getSectionLines(lines, sections, 'experience');
-  if (!expLines.length) return [];
+// ─────────────────────────────────────────────────────────────────────────────
+// Experience
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const entries: any[] = [];
+// Month name pattern (handles "Sept" as well as "Sep" / "September")
+const MON = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
 
-  // Date range regex — Month Year – Month Year or Year – Year or Date – Present
-  const DATE_RE = /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|\d{4})\b.*?\b(\d{4}|Present|Current|Now|Till Date)\b/i;
+// Full date range — covers the common formats seen in this PDF:
+//   "Dec 2024  Present"    →  Month Year <spaces> Present
+//   "Sept 2021  Dec 2024"  →  Month Year <spaces> Month Year
+//   "2020 - 2022"          →  Year - Year
+const DATE_RANGE = `(?:${MON}\\s+\\d{4}[\\s\\-–]+(?:${MON}\\s+)?(?:\\d{4}|Present|Current|Till\\s+Date|Now)|\\d{4}\\s*[\\-–]\\s*(?:\\d{4}|Present|Current|Now))`;
 
-  // Find lines with dates — those delineate job entries
-  const dateLinesIdx: number[] = [];
-  for (let i = 0; i < expLines.length; i++) {
-    if (DATE_RE.test(expLines[i])) dateLinesIdx.push(i);
+/**
+ * Job-header pattern for PDF format: "Role Company | City | DateRange"
+ * Group 1: everything before the first " | " (role + company concatenated)
+ * Group 2: city / location
+ * Group 3: date range
+ */
+const JOB_HEADER_SOURCE = `([A-Z][^|\\n]{5,80}?)\\s+\\|\\s+([^|\\n]{2,40}?)\\s+\\|\\s+(${DATE_RANGE})`;
+
+// Title words used to split "RoleCompany" string at the role terminus
+const TITLE_TERMS = /\b(Analyst|Engineer|Developer|Manager|Architect|Director|Consultant|Associate|Specialist|Scientist|Designer|Advisor|Professional|Executive|Officer|Intern|Lead|VP|Head)\b/i;
+
+function splitRoleCompany(combined: string): { role: string; company: string } {
+  const m = TITLE_TERMS.exec(combined);
+  if (!m) {
+    const words = combined.trim().split(/\s+/);
+    return { role: words.slice(0, 3).join(' '), company: words.slice(3).join(' ') };
   }
+  const titleEnd = m.index + m[0].length;
+  const role    = combined.slice(0, titleEnd).trim();
+  const company = combined.slice(titleEnd).trim().replace(/^[–\-\s]+/, '');
+  return { role, company };
+}
 
-  if (dateLinesIdx.length === 0) {
-    // Fallback: try to split by lines that look like "Role | Company | Location"
-    return extractExperienceFallback(expLines);
-  }
+function extractBullets(text: string): string[] {
+  return text
+    .split(/[•·▪▸→]/)
+    .map(s => s.trim())
+    .filter(s => s.length > 20 && s.length < 400)
+    .filter(s => !/^\d{1,2}\/\d{4}/.test(s));
+}
 
-  for (let d = 0; d < dateLinesIdx.length; d++) {
-    const di = dateLinesIdx[d];
-    const dateLine = expLines[di];
-    const datesMatch = dateLine.match(DATE_RE);
-    const dates = datesMatch?.[0] || dateLine;
+function stripContactNoise(text: string): string {
+  return text
+    .replace(/\b(?:linkedin|github)\.\S+/gi, '')
+    .replace(/\S+@\S+\.\S+/g, '')
+    .replace(/\b9[1]?\s?\d{9,10}\b/g, '')
+    .replace(/\b\d{10}\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
-    // Look backward for role/company (up to 3 lines before date)
-    const prevLines = expLines.slice(Math.max(0, di - 3), di);
+export function extractExperience(expSection: string): any[] {
+  if (!expSection) return [];
 
-    // Company + role are usually on the same line or separate lines
-    // Pattern: "Role Company Location" or "Role | Company" (pipe stripped in PDF)
-    let role = '';
-    let company = '';
-    let location = '';
-
-    if (prevLines.length >= 2) {
-      // Check if the date line itself has "Role Company City"
-      const dateSplit = dateLine.split(DATE_RE);
-      const beforeDate = dateSplit[0].trim();
-      if (beforeDate.length > 5) {
-        // Parse "Senior Business Analyst Prescience Decision Solutions Bangalore"
-        const words = beforeDate.split(/\s+/);
-        // Heuristic: company is a proper noun sequence, role is before it
-        role = prevLines[prevLines.length - 1] || beforeDate;
-        company = prevLines[prevLines.length - 2] || '';
-      } else {
-        role = prevLines[prevLines.length - 1];
-        company = prevLines[prevLines.length - 2] || '';
-      }
-    } else if (prevLines.length === 1) {
-      // Role and company on same line, split by common separators
-      const combined = prevLines[0];
-      const atMatch = combined.match(/^(.+?)\s+(?:at|@|-|–)\s+(.+)$/i);
-      if (atMatch) {
-        role = atMatch[1].trim();
-        company = atMatch[2].trim();
-      } else {
-        role = combined;
-      }
-    }
-
-    // Collect description bullets (between this date and next date marker)
-    const nextDateStart = dateLinesIdx[d + 1] ?? expLines.length;
-    const descLines = expLines.slice(di + 1, nextDateStart)
-      .filter(l => l.length > 10 && !l.match(/^(education|skills?|projects?|certifications?)/i));
-
-    const achievements: string[] = [];
-    const descParts: string[] = [];
-    for (const l of descLines.slice(0, 8)) {
-      if (/^[•\-*▪▸→]/.test(l) || /^\d+\./.test(l)) {
-        achievements.push(l.replace(/^[•\-*▪▸→\d.]\s*/, '').trim());
-      } else {
-        descParts.push(l);
-      }
-    }
-
-    entries.push({
-      role: cleanLine(role),
-      company: cleanLine(company),
-      dates: dates.trim(),
-      location: location,
-      description: descParts.join(' ').slice(0, 300),
-      achievements: achievements.slice(0, 6),
+  const re = new RegExp(JOB_HEADER_SOURCE, 'gi');
+  const headerMatches: Array<{ roleCompany: string; location: string; dates: string; idx: number; len: number }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(expSection)) !== null) {
+    headerMatches.push({
+      roleCompany: m[1].trim(),
+      location:    m[2].trim(),
+      dates:       m[3].trim(),
+      idx:         m.index,
+      len:         m[0].length,
     });
   }
 
-  return entries.filter(e => e.role || e.company).slice(0, 8);
-}
-
-function extractExperienceFallback(lines: string[]): any[] {
-  // When no date patterns found, try to split by empty-line-separated blocks
-  const entries: any[] = [];
-  let currentBlock: string[] = [];
-
-  for (const l of lines) {
-    if (l.length === 0) {
-      if (currentBlock.length > 0) {
-        entries.push({
-          role: currentBlock[0] || '',
-          company: currentBlock[1] || '',
-          dates: '',
-          description: currentBlock.slice(2).join(' ').slice(0, 300),
-          achievements: [],
-        });
-        currentBlock = [];
-      }
-    } else {
-      currentBlock.push(l);
-    }
-  }
-  return entries.slice(0, 8);
-}
-
-// ── Education ─────────────────────────────────────────────────────────────
-function extractEducation(lines: string[], sections: SectionBounds[]): any[] {
-  const eduLines = getSectionLines(lines, sections, 'education');
-  if (!eduLines.length) return [];
-
-  const entries: any[] = [];
-  const DEGREE_RE = /\b(B\.?Tech|B\.?E\.?|B\.?S\.?|B\.?Sc\.?|M\.?Tech|M\.?E\.?|M\.?S\.?|M\.?Sc\.?|MBA|Ph\.?D\.?|Bachelor|Master|Diploma|Associate|Doctor|High\s+School|CBSE|ICSE|HSC|SSC|12th|10th)/i;
-
-  for (let i = 0; i < eduLines.length; i++) {
-    const l = eduLines[i];
-    if (DEGREE_RE.test(l)) {
-      const dateMatch = l.match(/\b\d{4}\b.*?\b\d{4}\b/) || eduLines[i + 1]?.match(/\b\d{4}\b/);
-      entries.push({
-        degree: l.trim(),
-        school: eduLines[i - 1]?.trim() || '',
-        field: '',
-        dates: dateMatch?.[0] || '',
-        gpa: l.match(/(?:GPA|CGPA|CPI)[:\s]*([\d.]+)/i)?.[1] || '',
-      });
-    } else if (/\b(University|College|Institute|School|Academy)\b/i.test(l)) {
-      // Line is a school name — look for degree on next line
-      const nextDegree = eduLines[i + 1] && DEGREE_RE.test(eduLines[i + 1]) ? eduLines[i + 1] : '';
-      if (nextDegree) {
-        entries.push({
-          school: l.trim(),
-          degree: nextDegree.trim(),
-          field: '',
-          dates: eduLines[i + 2]?.match(/\b\d{4}\b/)?.[0] || '',
-          gpa: '',
-        });
-        i++;
-      }
-    }
+  if (headerMatches.length === 0) {
+    return [{
+      role: '', company: '', dates: '', location: '',
+      description: expSection.slice(0, 600).trim(),
+      achievements: extractBullets(expSection).slice(0, 6),
+    }];
   }
 
-  return entries.slice(0, 5);
+  return headerMatches.map((hdr, i) => {
+    const { role, company } = splitRoleCompany(hdr.roleCompany);
+
+    const contentStart = hdr.idx + hdr.len;
+    const contentEnd   = headerMatches[i + 1]?.idx ?? expSection.length;
+    const rawContent   = expSection.slice(contentStart, contentEnd);
+
+    // Bullets before the very first job header (appear in this PDF due to layout)
+    const preamble = i === 0 ? expSection.slice(0, hdr.idx) : '';
+    const allContent = stripContactNoise(preamble + rawContent);
+
+    const bullets = extractBullets(allContent);
+    const prose   = allContent.replace(/[•·▪▸→][^•·▪▸→]*/g, '').replace(/\s+/g, ' ').trim();
+
+    return {
+      role,
+      company,
+      dates:    hdr.dates,
+      location: hdr.location,
+      description: prose.slice(0, 400),
+      achievements: bullets.slice(0, 6),
+    };
+  });
 }
 
-// ── Projects ──────────────────────────────────────────────────────────────
-function extractProjects(lines: string[], sections: SectionBounds[]): any[] {
-  const projLines = getSectionLines(lines, sections, 'projects');
-  if (!projLines.length) return [];
+// ─────────────────────────────────────────────────────────────────────────────
+// Education — degree-keyword splitting
+// (degree, date, and school are all on the same inline text run)
+// ─────────────────────────────────────────────────────────────────────────────
 
+// Splits the education text into one chunk per degree entry.
+// Lookahead so the degree keyword itself is included in the chunk.
+const DEGREE_SPLIT_RE = /(?=\b(?:B\.?Tech|B\.?E\.?|B\.?Sc?\.?|M\.?Tech|M\.?E\.?|M\.?Sc?\.?|MBA|MCA|Ph\.?D\.?|Bachelor|Master|Diploma|12th\s+Standard|10th\s+Standard|12th|10th|HSC|SSC)\b)/gi;
+
+// Date range inside an education chunk: "MM/YYYY- MM/YYYY"
+const EDU_DATE_RE = /\d{1,2}\/\d{4}[\s\-–]+\d{1,2}\/\d{4}/g;
+
+// GPA / percentage score: "75/10", "82/100", "9/10"
+const SCORE_RE = /\b\d{1,3}(?:\.\d{1,2})?\s*\/\s*\d{1,3}\b/g;
+
+export function extractEducation(eduSection: string): any[] {
+  if (!eduSection) return [];
+
+  const chunks = eduSection.split(DEGREE_SPLIT_RE).filter(s => s.trim().length > 5);
+
+  return chunks.map(chunk => {
+    // Degree: from the start of the chunk
+    const degreeMatch = chunk.match(
+      /^(B\.?Tech(?:\s+in\s+[\w\s]+)?|B\.?E\.?|B\.?Sc?\.?|M\.?Tech(?:\s+in\s+[\w\s]+)?|M\.?E\.?|M\.?Sc?\.?|MBA|MCA|Ph\.?D\.?|Bachelor(?:\s+of\s+[\w\s]+)?|Master(?:\s+of\s+[\w\s]+)?|Diploma(?:\s+in\s+[\w\s]+)?|12th\s+Standard(?:\s*\([A-Z]+\))?|10th\s+Standard(?:\s*\([A-Z]+\))?|12th|10th|HSC|SSC)/i
+    );
+    const degree = degreeMatch?.[0]?.trim() ?? '';
+    if (!degree) return null;
+
+    // Date range
+    EDU_DATE_RE.lastIndex = 0;
+    const dateMatch = EDU_DATE_RE.exec(chunk);
+    const dates = dateMatch?.[0]?.trim() ?? '';
+
+    // School: text after the date range, with score tokens removed
+    let school = '';
+    if (dates && dateMatch) {
+      const afterDate = chunk.slice(dateMatch.index + dateMatch[0].length).trim();
+      school = afterDate
+        .replace(new RegExp(SCORE_RE.source, 'g'), '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 100);
+    }
+
+    // GPA/score
+    SCORE_RE.lastIndex = 0;
+    const scoreMatch = SCORE_RE.exec(chunk);
+    const gpa = scoreMatch?.[0]?.trim() ?? '';
+
+    return { degree, school, field: '', dates, gpa };
+  }).filter(Boolean) as any[];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Projects
+// ─────────────────────────────────────────────────────────────────────────────
+
+function extractProjects(projSection: string): any[] {
+  if (!projSection) return [];
+
+  const lines = projSection.split(/[•·\n]/).map(s => s.trim()).filter(Boolean);
   const entries: any[] = [];
   let current: any = null;
 
-  for (const l of projLines) {
-    // New project starts with a short line that doesn't look like a bullet
-    if (!l.startsWith('•') && !l.startsWith('-') && l.length < 80 && l.length > 3 && !/^(led|built|developed|created|designed|implemented)/i.test(l)) {
+  for (const l of lines) {
+    const isBullet = /^(led|built|developed|created|provided|automated|collaborated|designed|implemented)/i.test(l);
+    if (!isBullet && l.length < 80 && l.length > 3) {
       if (current) entries.push(current);
       current = { name: l, description: '', technologies: [], dates: '' };
     } else if (current) {
-      const desc = l.replace(/^[•\-*]\s*/, '');
-      current.description += (current.description ? ' ' : '') + desc;
-      // Extract tech from parens or "using X, Y, Z"
-      const tech = l.match(/(?:using|built with|tech:|stack:)\s*([^.]+)/i)?.[1];
-      if (tech) {
-        current.technologies.push(...tech.split(/[,|]/).map((t: string) => t.trim()).filter(Boolean));
-      }
+      current.description += (current.description ? ' ' : '') + l.replace(/^•\s*/, '');
+      const tech = l.match(/(?:using|built\s+with|tech(?:nologies)?:|stack:)\s*([^.]{3,60})/i)?.[1];
+      if (tech) current.technologies.push(...tech.split(/[,|]/).map((t: string) => t.trim()).filter(Boolean));
     }
   }
   if (current) entries.push(current);
@@ -539,52 +527,55 @@ function extractProjects(lines: string[], sections: SectionBounds[]): any[] {
   return entries.slice(0, 6).map(e => ({ ...e, description: e.description.slice(0, 300) }));
 }
 
-// ── Certifications ────────────────────────────────────────────────────────
-function extractCertifications(lines: string[], sections: SectionBounds[]): any[] {
-  const certLines = getSectionLines(lines, sections, 'certifications');
-  if (!certLines.length) {
-    // Also look for certification keywords anywhere
-    const allCertLines = lines.filter(l =>
-      /\b(certif|certified|credential|course|bootcamp)\b/i.test(l) && l.length < 120
-    );
-    return allCertLines.slice(0, 5).map(l => ({ name: l.replace(/^[•\-*]\s*/, '').trim(), issuer: '', date: '', url: '' }));
+// ─────────────────────────────────────────────────────────────────────────────
+// Certifications
+// ─────────────────────────────────────────────────────────────────────────────
+
+function extractCertifications(certSection: string): any[] {
+  if (!certSection) return [];
+
+  const dateMatch = certSection.match(/\d{1,2}\/\d{4}[\s\-–]+\d{1,2}\/\d{4}/);
+  const urlMatch  = certSection.match(/https?:\/\/[^\s]+/);
+
+  // Strip "Credential Link" label and extract the cert name
+  const cleaned = certSection.replace(/\bCredential\s+Link\s*/gi, '').trim();
+  const nameMatch = cleaned.match(/^([A-Z][^\d.!?\n]{10,100}?)(?=\s+(?:\d|Credential|\d{2}\/\d{4}))/i)
+    ?? cleaned.match(/^(.{10,80})/);
+  const name = nameMatch?.[1]?.trim() ?? cleaned.slice(0, 80).trim();
+
+  if (!name || name.length < 5) return [];
+
+  return [{ name, issuer: '', date: dateMatch?.[0]?.trim() ?? '', url: urlMatch?.[0] ?? '' }];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Achievements
+// ─────────────────────────────────────────────────────────────────────────────
+
+function extractAchievements(text: string, experience: any[]): string[] {
+  // Collect quantified bullets from experience entries
+  const fromExp: string[] = [];
+  for (const exp of experience) {
+    for (const a of (exp.achievements || [])) {
+      if (a.length > 30) fromExp.push(a.slice(0, 200));
+    }
   }
 
-  return certLines.slice(0, 6).map(l => {
-    const parts = l.split(/[|,–\-]/).map((p: string) => p.trim());
-    return {
-      name: parts[0] || l,
-      issuer: parts[1] || '',
-      date: parts[2] || l.match(/\b\d{4}\b/)?.[0] || '',
-      url: l.match(/https?:\/\/[^\s]+/)?.[0] || '',
-    };
-  });
+  // Scan full text for strongly quantified sentences
+  const QUANT_RE = /([A-Z][^.!?]{15,150}(?:\d+%|\d+x|\$[\d,]+|\d+\s*(?:million|k\b|\+))[^.!?]{0,80}[.!?])/g;
+  const fromText: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = QUANT_RE.exec(text)) !== null) {
+    const s = m[1].trim();
+    if (!fromExp.includes(s)) fromText.push(s);
+  }
+
+  return [...new Set([...fromExp, ...fromText])].slice(0, 8);
 }
 
-// ── Achievements ──────────────────────────────────────────────────────────
-function extractAchievements(lines: string[], sections: SectionBounds[]): string[] {
-  const achLines = getSectionLines(lines, sections, 'achievements');
-  // Also look for lines with quantified impact across all lines
-  const quantified = lines.filter(l =>
-    /\d+%/.test(l) ||
-    /(?:increased|reduced|improved|saved|generated|achieved|delivered|grew|scaled)\s+.*\d/i.test(l)
-  );
-
-  const all = [
-    ...achLines.map(l => l.replace(/^[•\-*]\s*/, '').trim()),
-    ...quantified.map(l => l.replace(/^[•\-*]\s*/, '').trim()),
-  ];
-
-  return [...new Set(all)].filter(s => s.length > 15).slice(0, 10);
-}
-
-function cleanLine(s: string): string {
-  return s.replace(/^[•\-*|]\s*/, '').trim();
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// ATS Score — 5 dimensions, returns breakdown + recommendations
-// ────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// ATS scoring — 5 dimensions
+// ─────────────────────────────────────────────────────────────────────────────
 
 export interface AtsResult {
   score: number;
@@ -602,79 +593,74 @@ export function calculateResumeStrength(parsedText: string, structure: any): num
 }
 
 export function calculateAts(parsedText: string, structure: any): AtsResult {
-  const s = structure || {};
+  const s    = structure || {};
   const text = parsedText || '';
   const recommendations: string[] = [];
   const missingKeywords: string[] = [];
 
-  // ── 1. Completeness (25 pts) ─────────────────────────────────────────────
+  // ── 1. Completeness (25 pts) ──────────────────────────────────────────────
   let completeness = 0;
-  const checks: Array<[boolean, number, string]> = [
-    [!!s.full_name?.trim(), 5, 'Add your full name'],
-    [!!s.email?.trim(), 4, 'Add your email address'],
-    [!!s.phone?.trim(), 3, 'Add your phone number'],
-    [!!s.linkedin?.trim(), 3, 'Add your LinkedIn profile URL'],
-    [!!(s.headline?.trim()), 4, 'Add a professional headline/title'],
-    [!!(s.bio?.trim() && s.bio.length > 80), 4, 'Add a professional summary (2-4 sentences)'],
-    [s.skills?.length >= 5, 2, 'List at least 5 skills'],
+  const compFields: Array<[boolean, number, string]> = [
+    [!!s.full_name?.trim(),           4, 'Add your full name'],
+    [!!s.email?.trim(),               4, 'Add your email address'],
+    [!!s.phone?.trim(),               3, 'Add your phone number'],
+    [!!s.linkedin?.trim(),            2, 'Add your LinkedIn profile URL'],
+    [!!s.headline?.trim(),            4, 'Add a professional headline/title'],
+    [!!(s.bio?.trim()?.length > 80),  5, 'Add a professional summary (80+ words)'],
+    [!!(s.skills?.length >= 5),       2, 'List at least 5 skills'],
+    [!!s.location?.trim(),            1, 'Add your city/location'],
   ];
-  for (const [ok, pts, msg] of checks) {
+  for (const [ok, pts, msg] of compFields) {
     if (ok) completeness += pts;
     else recommendations.push(msg);
   }
 
-  // ── 2. Keywords (25 pts) ────────────────────────────────────────────────
-  const ACTION_VERBS = ['led', 'built', 'developed', 'designed', 'implemented', 'managed', 'created', 'delivered', 'improved', 'optimized', 'reduced', 'increased', 'drove', 'launched', 'architected', 'spearheaded', 'collaborated', 'mentored', 'automated', 'analyzed', 'forecasted'];
-  const foundVerbs = ACTION_VERBS.filter(v => new RegExp(`\\b${v}\\b`, 'i').test(text));
-  const verbScore = Math.min(10, foundVerbs.length * 2);
+  // ── 2. Keywords & content (25 pts) ───────────────────────────────────────
+  const ACTION_VERBS = ['led', 'built', 'developed', 'designed', 'implemented', 'managed', 'created', 'delivered', 'improved', 'optimized', 'reduced', 'increased', 'drove', 'launched', 'spearheaded', 'collaborated', 'mentored', 'automated', 'analyzed', 'forecasted', 'deployed', 'scaled', 'streamlined', 'enabled'];
+  const foundVerbs  = ACTION_VERBS.filter(v => new RegExp(`\\b${v}\\b`, 'i').test(text));
+  const verbScore   = Math.min(10, Math.floor(foundVerbs.length * 1.5));
 
-  const hasQuantified = /\d+%|\d+x|\$[\d,]+|\d+\s*(?:million|thousand|k\b)/i.test(text);
-  const quantifiedScore = hasQuantified ? 10 : 0;
-  if (!hasQuantified) recommendations.push('Add quantified achievements (%, $, numbers)');
+  const quantCount  = [/\d+%/, /\d+x\b/, /\$[\d,]+/, /\d+\s*(?:million|thousand|k\b)/i].filter(p => p.test(text)).length;
+  const quantScore  = Math.min(10, quantCount * 3);
+  if (quantCount === 0) recommendations.push('Add quantified achievements (%, $, numbers)');
 
-  const wordCount = text.trim().split(/\s+/).length;
-  const lengthScore = wordCount >= 600 ? 5 : wordCount >= 400 ? 3 : wordCount >= 200 ? 1 : 0;
-  if (wordCount < 400) recommendations.push('Expand resume content — aim for 400-700 words');
+  const words       = text.trim().split(/\s+/).length;
+  const lengthScore = words >= 600 ? 5 : words >= 400 ? 3 : words >= 200 ? 1 : 0;
+  if (words < 400)  recommendations.push('Expand resume content — aim for 400-700 words');
 
-  const keywordScore = verbScore + quantifiedScore + lengthScore;
+  const keywordScore = Math.min(25, verbScore + quantScore + lengthScore);
 
-  // ── 3. Skills (20 pts) ──────────────────────────────────────────────────
-  const skillCount = s.skills?.length || 0;
-  let skillsScore = 0;
-  if (skillCount >= 15) skillsScore = 20;
-  else if (skillCount >= 10) skillsScore = 16;
-  else if (skillCount >= 6) skillsScore = 12;
-  else if (skillCount >= 3) skillsScore = 8;
-  else if (skillCount > 0) skillsScore = 4;
-
+  // ── 3. Skills (20 pts) ───────────────────────────────────────────────────
+  const skillCount  = s.skills?.length || 0;
+  const skillsScore =
+    skillCount >= 20 ? 20 :
+    skillCount >= 15 ? 17 :
+    skillCount >= 10 ? 14 :
+    skillCount >= 6  ? 10 :
+    skillCount >= 3  ? 6  :
+    skillCount > 0   ? 3  : 0;
   if (skillCount < 10) {
     recommendations.push(`Add more skills — you have ${skillCount}, aim for 10+`);
-    // Suggest some common ones not in their list
     const current = (s.skills || []).map((sk: string) => sk.toLowerCase());
-    const suggested = SKILL_KEYWORDS.filter(sk => !current.includes(sk.toLowerCase())).slice(0, 5);
-    missingKeywords.push(...suggested);
+    KNOWN_SKILLS.filter(sk => !current.includes(sk.toLowerCase())).slice(0, 5).forEach(kw => missingKeywords.push(kw));
   }
 
-  // ── 4. Experience (20 pts) ──────────────────────────────────────────────
-  const expCount = s.experience?.length || 0;
-  let experienceScore = 0;
-  if (expCount >= 3) experienceScore = 14;
-  else if (expCount === 2) experienceScore = 10;
-  else if (expCount === 1) experienceScore = 6;
-  if (expCount === 0) recommendations.push('Add work experience entries');
+  // ── 4. Experience (20 pts) ───────────────────────────────────────────────
+  const expCount    = s.experience?.length || 0;
+  const expBase     = expCount >= 4 ? 12 : expCount === 3 ? 10 : expCount === 2 ? 7 : expCount === 1 ? 4 : 0;
+  const hasContent  = s.experience?.some((e: any) => (e.achievements?.length > 0) || (e.description?.trim()?.length > 40)) ?? false;
+  const expBonus    = hasContent ? 8 : 0;
+  const experienceScore = Math.min(20, expBase + expBonus);
+  if (expCount === 0)    recommendations.push('Add work experience with role, company, and dates');
+  else if (!hasContent)  recommendations.push('Add achievement bullets to each experience entry');
 
-  const hasAchievementsInExp = s.experience?.some((e: any) => e.achievements?.length > 0 || (e.description?.length > 50));
-  if (hasAchievementsInExp) experienceScore += 6;
-  else if (expCount > 0) recommendations.push('Add achievement bullets to each experience entry');
-
-  // ── 5. Structure (10 pts) ───────────────────────────────────────────────
+  // ── 5. Structure (10 pts) ────────────────────────────────────────────────
   let structureScore = 0;
-  if (s.education?.length > 0) structureScore += 3;
-  else recommendations.push('Add your education');
-  if (s.experience?.length > 0) structureScore += 3;
-  if (s.skills?.length > 0) structureScore += 2;
-  if (s.projects?.length > 0 || s.certifications?.length > 0) structureScore += 2;
-  else if (expCount > 0) recommendations.push('Add projects or certifications to stand out');
+  if ((s.education?.length    || 0) > 0) structureScore += 3; else recommendations.push('Add your education section');
+  if (expCount                    > 0) structureScore += 3;
+  if (skillCount                  > 0) structureScore += 2;
+  if ((s.certifications?.length || 0) > 0 || (s.projects?.length || 0) > 0) structureScore += 2;
+  else if (expCount > 0) recommendations.push('Add certifications or projects to strengthen your profile');
 
   const score = Math.min(100, completeness + keywordScore + skillsScore + experienceScore + structureScore);
 
