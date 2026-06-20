@@ -808,8 +808,8 @@ export default function ResumesPage() {
                       <>
                         {isDirty && <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)', fontStyle: 'italic' }}>Unsaved changes</span>}
                         {/* preview toggle even in edit mode */}
-                        <button onClick={() => setMode(mode === 'edit' ? 'preview' : 'edit')} style={mode === 'preview' ? btnPrimary : btnSecondary}>
-                          <Eye size={13} /> {mode === 'preview' ? 'Back to Edit' : 'Preview'}
+                        <button onClick={() => setMode('preview')} style={btnSecondary}>
+                          <Eye size={13} /> Preview
                         </button>
                         <button onClick={cancelEdit} style={btnSecondary}><X size={14} /> Cancel</button>
                         <button onClick={saveEdit} disabled={isSaving} style={btnPrimary}>
