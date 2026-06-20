@@ -139,7 +139,7 @@ export function extractResumeFromText(rawText: string) {
 
   const { full_name, headline, location } = extractContactBlock(text, email);
 
-  const bio            = getSec(sections, 'summary').slice(0, 600);
+  const bio            = getSec(sections, 'summary').trim();
   const skills         = extractSkills(getSec(sections, 'skills'), text);
   const experience     = extractExperience(getSec(sections, 'experience'));
   const education      = extractEducation(getSec(sections, 'education'));
@@ -422,16 +422,33 @@ export function extractExperience(expSection: string): any[] {
     }];
   }
 
+  // Split preamble (text before first header) into segments, one per job.
+  // In single-paragraph PDF layouts the job descriptions appear BEFORE the job
+  // header lines that they describe.  We split the preamble by the number of
+  // jobs so each job gets a roughly equal share of description text.
+  const preambleRaw = stripContactNoise(expSection.slice(0, headerMatches[0].idx));
+  const sentences   = preambleRaw.match(/[^.!?]+[.!?]+\s*/g) ?? (preambleRaw.length > 0 ? [preambleRaw] : []);
+  const n           = headerMatches.length;
+  const perJob      = Math.max(1, Math.ceil(sentences.length / n));
+
   return headerMatches.map((hdr, i) => {
+    // Require group-1 to start with an actual uppercase letter (guards against
+    // the 'i' flag in the RegExp making [A-Z] match lowercase characters).
+    if (!/^[A-Z]/.test(hdr.roleCompany)) return null;
+
     const { role, company } = splitRoleCompany(hdr.roleCompany);
 
     const contentStart = hdr.idx + hdr.len;
     const contentEnd   = headerMatches[i + 1]?.idx ?? expSection.length;
-    const rawContent   = expSection.slice(contentStart, contentEnd);
+    const rawContent   = stripContactNoise(expSection.slice(contentStart, contentEnd));
 
-    // Bullets before the very first job header (appear in this PDF due to layout)
-    const preamble = i === 0 ? expSection.slice(0, hdr.idx) : '';
-    const allContent = stripContactNoise(preamble + rawContent);
+    // Assign preamble sentences to this job (reversed order: last job → first sentences)
+    const preambleForJob = sentences
+      .slice(Math.max(0, sentences.length - (i + 1) * perJob), sentences.length - i * perJob)
+      .join('')
+      .trim();
+
+    const allContent = [preambleForJob, rawContent].filter(Boolean).join(' ').trim();
 
     const bullets = extractBullets(allContent);
     const prose   = allContent.replace(/[•·▪▸→][^•·▪▸→]*/g, '').replace(/\s+/g, ' ').trim();
@@ -441,10 +458,10 @@ export function extractExperience(expSection: string): any[] {
       company,
       dates:    hdr.dates,
       location: hdr.location,
-      description: prose.slice(0, 400),
-      achievements: bullets.slice(0, 6),
+      description: prose.slice(0, 1500),
+      achievements: bullets.slice(0, 8),
     };
-  });
+  }).filter(Boolean) as any[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
