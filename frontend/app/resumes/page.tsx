@@ -215,10 +215,19 @@ function ResumeClassic({ s }: { s: any }) {
         </>
       )}
 
-      {(s.skills || []).length > 0 && (
+      {((s.skill_categories || []).length > 0 || (s.skills || []).length > 0) && (
         <>
           <div style={sH}>Skills</div>
-          <div style={{ fontSize: '9.5pt', lineHeight: 1.7 }}>{(s.skills || []).join('  ·  ')}</div>
+          {(s.skill_categories || []).length > 0 ? (
+            (s.skill_categories || []).map((cat: any, i: number) => (
+              <div key={i} style={{ marginBottom: 6, fontSize: '9.5pt' }}>
+                <span style={{ fontWeight: 700 }}>{cat.name}: </span>
+                <span style={{ color: '#444' }}>{(cat.skills || []).join('  ·  ')}</span>
+              </div>
+            ))
+          ) : (
+            <div style={{ fontSize: '9.5pt', lineHeight: 1.7 }}>{(s.skills || []).join('  ·  ')}</div>
+          )}
         </>
       )}
 
@@ -228,6 +237,7 @@ function ResumeClassic({ s }: { s: any }) {
           {(s.certifications || []).map((c: any, i: number) => (
             <div key={i} style={{ fontSize: '9.5pt', marginBottom: 4 }}>
               <span style={{ fontWeight: 600 }}>{c.name}</span>
+              {c.issuer && <span style={{ color: '#666', marginLeft: 6 }}>— {c.issuer}</span>}
               {c.date && <span style={{ color: '#666', marginLeft: 8 }}>{c.date}</span>}
             </div>
           ))}
@@ -274,15 +284,29 @@ function ResumeModern({ s }: { s: any }) {
         {s.linkedin && <div style={{ fontSize: '8pt', color: '#c4b5fd', marginTop: 3, wordBreak: 'break-all' }}>{s.linkedin.replace('https://www.', '').replace('https://', '')}</div>}
         {s.github && <div style={{ fontSize: '8pt', color: '#c4b5fd', marginTop: 3, wordBreak: 'break-all' }}>{s.github.replace('https://www.', '').replace('https://', '')}</div>}
 
-        {(s.skills || []).length > 0 && (
+        {((s.skill_categories || []).length > 0 || (s.skills || []).length > 0) && (
           <>
             <div style={sideSecH}>Skills</div>
-            {(s.skills || []).slice(0, 22).map((sk: string) => (
-              <div key={sk} style={{ fontSize: '8.5pt', color: '#e9d5ff', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 7 }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#a78bfa', flexShrink: 0, display: 'inline-block' }} />
-                {sk}
-              </div>
-            ))}
+            {(s.skill_categories || []).length > 0 ? (
+              (s.skill_categories || []).map((cat: any, ci: number) => (
+                <div key={ci} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: '7.5pt', fontWeight: 700, color: '#c4b5fd', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{cat.name}</div>
+                  {(cat.skills || []).map((sk: string, si: number) => (
+                    <div key={si} style={{ fontSize: '8pt', color: '#e9d5ff', marginBottom: 3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#a78bfa', flexShrink: 0, display: 'inline-block' }} />
+                      {sk}
+                    </div>
+                  ))}
+                </div>
+              ))
+            ) : (
+              (s.skills || []).slice(0, 22).map((sk: string) => (
+                <div key={sk} style={{ fontSize: '8.5pt', color: '#e9d5ff', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 7 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#a78bfa', flexShrink: 0, display: 'inline-block' }} />
+                  {sk}
+                </div>
+              ))
+            )}
           </>
         )}
 
@@ -410,12 +434,21 @@ function ResumeMinimal({ s }: { s: any }) {
         </>
       )}
 
-      {(s.skills || []).length > 0 && (
+      {((s.skill_categories || []).length > 0 || (s.skills || []).length > 0) && (
         <>
           <div style={sH}>Skills</div>
-          <div style={{ fontSize: '9.5pt', color: '#374151', marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: '6px 18px' }}>
-            {(s.skills || []).map((sk: string) => <span key={sk}>{sk}</span>)}
-          </div>
+          {(s.skill_categories || []).length > 0 ? (
+            (s.skill_categories || []).map((cat: any, i: number) => (
+              <div key={i} style={{ marginBottom: 6, fontSize: '9.5pt' }}>
+                <span style={{ fontWeight: 700, color: '#374151' }}>{cat.name}:</span>
+                <span style={{ color: '#6b7280', marginLeft: 6 }}>{(cat.skills || []).join(' · ')}</span>
+              </div>
+            ))
+          ) : (
+            <div style={{ fontSize: '9.5pt', color: '#374151', marginBottom: 4, display: 'flex', flexWrap: 'wrap', gap: '6px 18px' }}>
+              {(s.skills || []).map((sk: string) => <span key={sk}>{sk}</span>)}
+            </div>
+          )}
           <div style={div1} />
         </>
       )}
@@ -745,11 +778,19 @@ export default function ResumesPage() {
   const addExp = () => { setEditStructure((p: any) => ({ ...p, experience: [...(p.experience || []), { company: '', role: '', dates: '', location: '', description: '', achievements: [] }] })); setIsDirty(true); };
   const removeExp = (i: number) => { setEditStructure((p: any) => ({ ...p, experience: p.experience.filter((_: any, j: number) => j !== i) })); setIsDirty(true); };
   const updateEdu = (i: number, f: string, v: string) => { setEditStructure((p: any) => { const e = [...(p.education || [])]; e[i] = { ...e[i], [f]: v }; return { ...p, education: e }; }); setIsDirty(true); };
-  const addEdu = () => { setEditStructure((p: any) => ({ ...p, education: [...(p.education || []), { school: '', degree: '', field: '', dates: '' }] })); setIsDirty(true); };
+  const addEdu = () => { setEditStructure((p: any) => ({ ...p, education: [...(p.education || []), { school: '', degree: '', field: '', dates: '', gpa: '' }] })); setIsDirty(true); };
   const removeEdu = (i: number) => { setEditStructure((p: any) => ({ ...p, education: p.education.filter((_: any, j: number) => j !== i) })); setIsDirty(true); };
   const updateProj = (i: number, f: string, v: string) => { setEditStructure((p: any) => { const e = [...(p.projects || [])]; e[i] = { ...e[i], [f]: v }; return { ...p, projects: e }; }); setIsDirty(true); };
   const addProj = () => { setEditStructure((p: any) => ({ ...p, projects: [...(p.projects || []), { name: '', description: '', technologies: [] }] })); setIsDirty(true); };
   const removeProj = (i: number) => { setEditStructure((p: any) => ({ ...p, projects: p.projects.filter((_: any, j: number) => j !== i) })); setIsDirty(true); };
+  const updateCert = (i: number, f: string, v: string) => { setEditStructure((p: any) => { const e = [...(p.certifications || [])]; e[i] = { ...e[i], [f]: v }; return { ...p, certifications: e }; }); setIsDirty(true); };
+  const addCert = () => { setEditStructure((p: any) => ({ ...p, certifications: [...(p.certifications || []), { name: '', issuer: '', date: '', url: '' }] })); setIsDirty(true); };
+  const removeCert = (i: number) => { setEditStructure((p: any) => ({ ...p, certifications: p.certifications.filter((_: any, j: number) => j !== i) })); setIsDirty(true); };
+  // Skill categories helpers
+  const addSkillCategory = () => { setEditStructure((p: any) => ({ ...p, skill_categories: [...(p.skill_categories || []), { name: 'New Category', skills: [] }] })); setIsDirty(true); };
+  const removeSkillCategory = (ci: number) => { setEditStructure((p: any) => ({ ...p, skill_categories: (p.skill_categories || []).filter((_: any, j: number) => j !== ci) })); setIsDirty(true); };
+  const updateCategoryName = (ci: number, name: string) => { setEditStructure((p: any) => { const cats = [...(p.skill_categories || [])]; cats[ci] = { ...cats[ci], name }; return { ...p, skill_categories: cats }; }); setIsDirty(true); };
+  const updateCategorySkills = (ci: number, raw: string) => { const skills = raw.split('|').map((s: string) => s.trim()).filter(Boolean); setEditStructure((p: any) => { const cats = [...(p.skill_categories || [])]; cats[ci] = { ...cats[ci], skills }; return { ...p, skill_categories: cats }; }); setIsDirty(true); };
 
   const getDisplayName = (r: Resume) =>
     r.parsed_structure?.full_name ? `${r.parsed_structure.full_name}'s Resume` : r.file_path?.split('/').pop()?.replace(/^\d+-/, '') || 'Resume';
@@ -903,6 +944,9 @@ export default function ResumesPage() {
                     updateExp={updateExp} addExp={addExp} removeExp={removeExp}
                     updateEdu={updateEdu} addEdu={addEdu} removeEdu={removeEdu}
                     updateProj={updateProj} addProj={addProj} removeProj={removeProj}
+                    updateCert={updateCert} addCert={addCert} removeCert={removeCert}
+                    addSkillCategory={addSkillCategory} removeSkillCategory={removeSkillCategory}
+                    updateCategoryName={updateCategoryName} updateCategorySkills={updateCategorySkills}
                     onCancel={cancelEdit} onSave={saveEdit}
                   />
                 )}
@@ -1007,14 +1051,27 @@ function ViewMode({ resume, onEdit }: { resume: Resume; onEdit: () => void }) {
         </div>
       )}
 
-      {s.skills?.length > 0 && (
+      {((s.skill_categories?.length > 0) || s.skills?.length > 0) && (
         <div>
-          <SL icon={<Tag size={12} />}>Skills ({s.skills.length})</SL>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
-            {s.skills.map((sk: string) => (
-              <span key={sk} style={{ padding: '0.2rem 0.65rem', background: 'rgba(124,58,237,0.09)', color: 'var(--color-primary)', borderRadius: '999px', fontSize: '0.82rem', border: '1px solid rgba(124,58,237,0.2)' }}>{sk}</span>
-            ))}
-          </div>
+          <SL icon={<Tag size={12} />}>Skills</SL>
+          {s.skill_categories?.length > 0 ? (
+            s.skill_categories.map((cat: any, ci: number) => (
+              <div key={ci} style={{ marginBottom: '0.6rem' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{cat.name}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {(cat.skills || []).map((sk: string, si: number) => (
+                    <span key={si} style={{ padding: '0.15rem 0.55rem', background: 'rgba(124,58,237,0.08)', color: 'var(--color-primary)', borderRadius: '999px', fontSize: '0.8rem', border: '1px solid rgba(124,58,237,0.18)' }}>{sk}</span>
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+              {s.skills.map((sk: string) => (
+                <span key={sk} style={{ padding: '0.2rem 0.65rem', background: 'rgba(124,58,237,0.09)', color: 'var(--color-primary)', borderRadius: '999px', fontSize: '0.82rem', border: '1px solid rgba(124,58,237,0.2)' }}>{sk}</span>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1109,8 +1166,12 @@ function EditMode({ editStructure, editText, newSkill, showRawText, isSaving,
   setField, setEditText, setNewSkill, setShowRawText,
   addSkill, removeSkill, updateExp, addExp, removeExp,
   updateEdu, addEdu, removeEdu, updateProj, addProj, removeProj,
+  updateCert, addCert, removeCert,
+  addSkillCategory, removeSkillCategory, updateCategoryName, updateCategorySkills,
   onCancel, onSave,
 }: any) {
+  const hasCategories = (editStructure.skill_categories || []).length > 0;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
 
@@ -1119,37 +1180,72 @@ function EditMode({ editStructure, editText, newSkill, showRawText, isSaving,
         <SL icon={<User size={12} />}>Contact & Identity</SL>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
           <Field label="Full Name" value={editStructure.full_name || ''} onChange={v => setField('full_name', v)} placeholder="Rishabh Jain" />
+          <Field label="Headline / Title" value={editStructure.headline || ''} onChange={v => setField('headline', v)} placeholder="Senior Analytics Professional" />
           <Field label="Email" value={editStructure.email || ''} onChange={v => setField('email', v)} placeholder="you@email.com" />
-          <Field label="Phone" value={editStructure.phone || ''} onChange={v => setField('phone', v)} placeholder="+91 98765 43210" />
+          <Field label="Phone" value={editStructure.phone || ''} onChange={v => setField('phone', v)} placeholder="+91 7005114153" />
           <Field label="Location" value={editStructure.location || ''} onChange={v => setField('location', v)} placeholder="Bangalore, India" />
+          <Field label="LinkedIn URL" value={editStructure.linkedin || ''} onChange={v => setField('linkedin', v)} placeholder="https://linkedin.com/in/rishabhjain0508" />
           <div style={{ gridColumn: '1 / -1' }}>
-            <Field label="Headline / Title" value={editStructure.headline || ''} onChange={v => setField('headline', v)} placeholder="Senior Analytics Professional" />
+            <Field label="GitHub URL" value={editStructure.github || ''} onChange={v => setField('github', v)} placeholder="https://github.com/rishabh0508" />
           </div>
-          <Field label="LinkedIn URL" value={editStructure.linkedin || ''} onChange={v => setField('linkedin', v)} placeholder="https://linkedin.com/in/..." />
-          <Field label="GitHub URL" value={editStructure.github || ''} onChange={v => setField('github', v)} placeholder="https://github.com/..." />
           <div style={{ gridColumn: '1 / -1' }}>
-            <label style={lbl}>Summary / Bio</label>
-            <textarea value={editStructure.bio || ''} onChange={e => setField('bio', e.target.value)} rows={5} style={{ ...inp, resize: 'vertical' }} placeholder="Brief professional summary..." />
+            <label style={lbl}>Professional Summary</label>
+            <textarea value={editStructure.bio || ''} onChange={e => setField('bio', e.target.value)} rows={6} style={{ ...inp, resize: 'vertical' }} placeholder="6+ Years of Experience in Product Analytics, Retail Analytics..." />
           </div>
         </div>
       </section>
 
       {/* Skills */}
       <section>
-        <SL icon={<Tag size={12} />}>Skills ({(editStructure.skills || []).length})</SL>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem', minHeight: '2rem' }}>
-          {(editStructure.skills || []).length === 0 && <span style={{ color: 'var(--text-muted)', fontSize: '0.83rem' }}>No skills yet.</span>}
-          {(editStructure.skills || []).map((sk: string, i: number) => (
-            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.65rem', background: 'rgba(124,58,237,0.09)', color: 'var(--color-primary)', borderRadius: '999px', fontSize: '0.82rem', border: '1px solid rgba(124,58,237,0.25)' }}>
-              {sk}
-              <button onClick={() => removeSkill(i)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, display: 'flex' }}><X size={11} /></button>
-            </span>
-          ))}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+          <SL icon={<Tag size={12} />} noMargin>
+            Skills {hasCategories ? `(${(editStructure.skill_categories || []).length} categories)` : `(${(editStructure.skills || []).length})`}
+          </SL>
+          <button onClick={addSkillCategory} style={btnSmall}><Plus size={12} /> Add Category</button>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <input value={newSkill} onChange={e => setNewSkill(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSkill()} placeholder="Type skill and press Enter…" style={{ ...inp, flex: 1 }} />
-          <button onClick={addSkill} style={{ ...btnPrimary, whiteSpace: 'nowrap' }}>+ Add</button>
-        </div>
+
+        {hasCategories ? (
+          // Categorized skill editor
+          (editStructure.skill_categories || []).map((cat: any, ci: number) => (
+            <div key={ci} style={{ ...entryCard, marginBottom: '0.6rem' }}>
+              <EntryHeader title={cat.name || `Category ${ci + 1}`} onRemove={() => removeSkillCategory(ci)} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <Field label="Category Name" value={cat.name || ''} onChange={v => updateCategoryName(ci, v)} placeholder="e.g. Programming & Data" />
+                <div>
+                  <label style={lbl}>Skills (pipe-separated: SQL | Python | PySpark)</label>
+                  <textarea
+                    value={(cat.skills || []).join(' | ')}
+                    onChange={e => updateCategorySkills(ci, e.target.value)}
+                    rows={2} style={{ ...inp, resize: 'vertical' }}
+                    placeholder="SQL | Python (Pandas | NumPy) | PySpark"
+                  />
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {(cat.skills || []).map((sk: string, si: number) => (
+                    <span key={si} style={{ padding: '0.15rem 0.55rem', background: 'rgba(124,58,237,0.08)', color: 'var(--color-primary)', borderRadius: '999px', fontSize: '0.78rem', border: '1px solid rgba(124,58,237,0.2)' }}>{sk}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))
+        ) : (
+          // Flat skills fallback
+          <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem', minHeight: '2rem' }}>
+              {(editStructure.skills || []).length === 0 && <span style={{ color: 'var(--text-muted)', fontSize: '0.83rem' }}>No skills yet. Add a category above or type below.</span>}
+              {(editStructure.skills || []).map((sk: string, i: number) => (
+                <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.25rem 0.65rem', background: 'rgba(124,58,237,0.09)', color: 'var(--color-primary)', borderRadius: '999px', fontSize: '0.82rem', border: '1px solid rgba(124,58,237,0.25)' }}>
+                  {sk}
+                  <button onClick={() => removeSkill(i)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, display: 'flex' }}><X size={11} /></button>
+                </span>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <input value={newSkill} onChange={e => setNewSkill(e.target.value)} onKeyDown={e => e.key === 'Enter' && addSkill()} placeholder="Type skill and press Enter…" style={{ ...inp, flex: 1 }} />
+              <button onClick={addSkill} style={{ ...btnPrimary, whiteSpace: 'nowrap' }}>+ Add</button>
+            </div>
+          </>
+        )}
       </section>
 
       {/* Experience */}
@@ -1222,6 +1318,30 @@ function EditMode({ editStructure, editText, newSkill, showRawText, isSaving,
                 <textarea value={proj.description || ''} onChange={e => updateProj(i, 'description', e.target.value)} rows={3} style={{ ...inp, resize: 'vertical' }} />
               </div>
               <Field label="Technologies (comma-separated)" value={(proj.technologies || []).join(', ')} onChange={v => updateProj(i, 'technologies', v.split(',').map((t: string) => t.trim()).filter(Boolean))} placeholder="React, Python, SQL" />
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* Certifications */}
+      <section>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.65rem' }}>
+          <SL icon={<Award size={12} />} noMargin>Certifications ({(editStructure.certifications || []).length})</SL>
+          <button onClick={addCert} style={btnSmall}><Plus size={12} /> Add</button>
+        </div>
+        {(editStructure.certifications || []).length === 0 && <EmptyState text='No certifications added.' />}
+        {(editStructure.certifications || []).map((cert: any, i: number) => (
+          <div key={i} style={entryCard}>
+            <EntryHeader title={cert.name || `Certification ${i + 1}`} onRemove={() => removeCert(i)} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Field label="Certification Name" value={cert.name || ''} onChange={v => updateCert(i, 'name', v)} placeholder="Data Science Course" />
+              </div>
+              <Field label="Issuer / Provider" value={cert.issuer || ''} onChange={v => updateCert(i, 'issuer', v)} placeholder="Coursera, Udemy, etc." />
+              <Field label="Date / Period" value={cert.date || ''} onChange={v => updateCert(i, 'date', v)} placeholder="10/2020 – 07/2021" />
+              <div style={{ gridColumn: '1 / -1' }}>
+                <Field label="Credential URL" value={cert.url || ''} onChange={v => updateCert(i, 'url', v)} placeholder="https://credential.link/..." />
+              </div>
             </div>
           </div>
         ))}

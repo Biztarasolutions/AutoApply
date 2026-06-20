@@ -51,21 +51,22 @@ ${resumeText.slice(0, 8000)}
 
 function mergeStructures(ai: any, fallback: any) {
   return {
-    full_name:      ai.full_name      || fallback.full_name,
-    email:          ai.email          || fallback.email,
-    phone:          ai.phone          || fallback.phone,
-    linkedin:       ai.linkedin       || fallback.linkedin,
-    github:         ai.github         || fallback.github,
-    website:        ai.website        || fallback.website,
-    location:       ai.location       || fallback.location,
-    headline:       ai.headline       || fallback.headline,
-    bio:            ai.bio            || fallback.bio,
-    skills:         ai.skills?.length         ? ai.skills         : fallback.skills,
-    experience:     ai.experience?.length     ? ai.experience     : fallback.experience,
-    education:      ai.education?.length      ? ai.education      : fallback.education,
-    projects:       ai.projects?.length       ? ai.projects       : fallback.projects,
-    certifications: ai.certifications?.length ? ai.certifications : fallback.certifications,
-    achievements:   ai.achievements?.length   ? ai.achievements   : fallback.achievements,
+    full_name:        ai.full_name      || fallback.full_name,
+    email:            ai.email          || fallback.email,
+    phone:            ai.phone          || fallback.phone,
+    linkedin:         ai.linkedin       || fallback.linkedin,
+    github:           ai.github         || fallback.github,
+    website:          ai.website        || fallback.website,
+    location:         ai.location       || fallback.location,
+    headline:         ai.headline       || fallback.headline,
+    bio:              ai.bio            || fallback.bio,
+    skill_categories: fallback.skill_categories, // always from heuristic (structured)
+    skills:           ai.skills?.length         ? ai.skills         : fallback.skills,
+    experience:       ai.experience?.length     ? ai.experience     : fallback.experience,
+    education:        ai.education?.length      ? ai.education      : fallback.education,
+    projects:         ai.projects?.length       ? ai.projects       : fallback.projects,
+    certifications:   ai.certifications?.length ? ai.certifications : fallback.certifications,
+    achievements:     ai.achievements?.length   ? ai.achievements   : fallback.achievements,
   };
 }
 
@@ -140,15 +141,17 @@ export function extractResumeFromText(rawText: string) {
 
   const { full_name, headline, location } = extractContactBlock(text, email);
 
-  const bio            = getSec(sections, 'summary').trim();
-  const skills         = extractSkills(getSec(sections, 'skills'), text);
-  const experience     = extractExperience(getSec(sections, 'experience'));
-  const education      = extractEducation(getSec(sections, 'education'));
-  const projects       = extractProjects(getSec(sections, 'projects'));
-  const certifications = extractCertifications(getSec(sections, 'certifications'));
-  const achievements   = extractAchievements(text, experience);
+  const bio              = getSec(sections, 'summary').trim();
+  const skillsRaw        = getSec(sections, 'skills');
+  const skill_categories = extractSkillCategories(skillsRaw);
+  const skills           = extractSkills(skillsRaw, text);
+  const experience       = extractExperience(getSec(sections, 'experience'));
+  const education        = extractEducation(getSec(sections, 'education'));
+  const projects         = extractProjects(getSec(sections, 'projects'));
+  const certifications   = extractCertifications(getSec(sections, 'certifications'));
+  const achievements     = extractAchievements(text, experience);
 
-  return { full_name, email, phone, linkedin, github, website, location, headline, bio, skills, experience, education, projects, certifications, achievements };
+  return { full_name, email, phone, linkedin, github, website, location, headline, bio, skill_categories, skills, experience, education, projects, certifications, achievements };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -343,6 +346,40 @@ function extractSkills(skillsSection: string, fullText: string): string[] {
   }
 
   return [...new Set(merged)].filter((s: string) => s.length >= 2 && s.length <= 40);
+}
+
+// Extracts grouped skill categories from the skills section.
+// Handles format: "Category Name\nSQL | Python | ...\nAnother Category\nTool | ..."
+// Returns empty array if no categories are detected (flat skills fallback used instead).
+function extractSkillCategories(skillsSection: string): Array<{ name: string; skills: string[] }> {
+  if (!skillsSection) return [];
+
+  // Split on newlines or pipe groups. A "category line" is a short title-like
+  // line with no pipe separator; a "skills line" has pipe-separated items.
+  const lines = skillsSection.split(/\n/).map(l => l.trim()).filter(Boolean);
+
+  const categories: Array<{ name: string; skills: string[] }> = [];
+  let current: { name: string; skills: string[] } | null = null;
+
+  for (const line of lines) {
+    const hasPipe = line.includes('|');
+    const isShort = line.length < 60;
+    const looksLikeHeader = !hasPipe && isShort && /[A-Z]/.test(line[0]) && !/^\d/.test(line);
+
+    if (looksLikeHeader) {
+      if (current && current.skills.length > 0) categories.push(current);
+      current = { name: line.replace(/[:\-–]+$/, '').trim(), skills: [] };
+    } else if (current) {
+      const items = line
+        .split(/[|,]/)
+        .map(s => s.trim())
+        .filter(s => s.length >= 2 && s.length <= 50);
+      current.skills.push(...items);
+    }
+  }
+  if (current && current.skills.length > 0) categories.push(current);
+
+  return categories;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
