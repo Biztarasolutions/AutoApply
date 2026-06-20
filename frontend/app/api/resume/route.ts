@@ -111,8 +111,9 @@ export async function POST(request: Request) {
     // Calculate resume strength score (no job description needed)
     let atsScore: number | null = null;
     try {
-      const { calculateResumeStrength } = await import('@/lib/ai/parser');
-      atsScore = calculateResumeStrength(parsedText, parsedStructure);
+      const { calculateAts } = await import('@/lib/ai/parser');
+      const atsResult = calculateAts(parsedText, parsedStructure);
+      atsScore = atsResult.score;
     } catch (e) {
       console.error('ATS score error:', e);
     }
@@ -146,10 +147,11 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH /api/resume — update fields (no updated_at column in schema)
+// PATCH /api/resume — update fields; supports reparse:true to re-extract structure
 export async function PATCH(request: Request) {
   try {
-    const { resumeId, userId, parsed_text, parsed_structure } = await request.json();
+    const body = await request.json();
+    const { resumeId, userId, parsed_text, parsed_structure, reparse } = body;
     if (!resumeId || !userId) {
       return NextResponse.json({ error: 'resumeId and userId required' }, { status: 400 });
     }
@@ -161,18 +163,30 @@ export async function PATCH(request: Request) {
     const supabase = getServiceClient();
     const updates: any = {};
     if (parsed_text !== undefined) updates.parsed_text = sanitize(parsed_text);
-    if (parsed_structure !== undefined) updates.parsed_structure = parsed_structure;
 
-    // Recalculate ATS score after edit
-    if (parsed_text !== undefined || parsed_structure !== undefined) {
+    // Re-parse mode: re-run heuristic extractor on existing text
+    if (reparse && parsed_text) {
       try {
-        const { calculateResumeStrength } = await import('@/lib/ai/parser');
-        const text = updates.parsed_text ?? parsed_text ?? '';
-        const structure = updates.parsed_structure ?? parsed_structure ?? {};
-        updates.ats_score = calculateResumeStrength(text, structure);
+        const { parseResume } = await import('@/lib/ai/parser');
+        updates.parsed_structure = await parseResume(sanitize(parsed_text));
+        updates.parser_status = 'parsed';
       } catch (e) {
-        console.error('ATS recalc error:', e);
+        console.error('Reparse error:', e);
       }
+    } else if (parsed_structure !== undefined) {
+      updates.parsed_structure = parsed_structure;
+    }
+
+    // Recalculate ATS score
+    let atsResult: any = null;
+    try {
+      const { calculateAts } = await import('@/lib/ai/parser');
+      const text = updates.parsed_text ?? parsed_text ?? '';
+      const structure = updates.parsed_structure ?? parsed_structure ?? {};
+      atsResult = calculateAts(text, structure);
+      updates.ats_score = atsResult.score;
+    } catch (e) {
+      console.error('ATS recalc error:', e);
     }
 
     const { data, error } = await supabase
@@ -184,7 +198,14 @@ export async function PATCH(request: Request) {
       .single();
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ success: true, resume: data });
+    return NextResponse.json({
+      success: true,
+      resume: data,
+      ats_recommendations: atsResult ? {
+        recommendations: atsResult.recommendations,
+        missingKeywords: atsResult.missingKeywords,
+      } : null,
+    });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
