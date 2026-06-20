@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -8,7 +8,7 @@ function getServiceClient() {
   return createClient(supabaseUrl, supabaseServiceKey);
 }
 
-// POST /api/resume — upload a resume file, extract text, parse, and save
+// POST /api/resume â€” upload a resume file, extract text, parse, and save
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     const userId = formData.get('userId') as string | null;
     const userEmail = formData.get('userEmail') as string | null;
 
-    console.log('Resume upload — userId:', userId, '| userEmail:', userEmail, '| file:', file?.name);
+    console.log('Resume upload â€” userId:', userId, '| userEmail:', userEmail, '| file:', file?.name);
     if (!file || !userId) {
       return NextResponse.json({ error: 'file and userId are required' }, { status: 400 });
     }
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
         parsedText = result.value;
       } catch (e) {
         console.error('DOCX parse error:', e);
-        parsedText = '[DOCX text extraction failed — please paste resume text manually]';
+        parsedText = '[DOCX text extraction failed â€” please paste resume text manually]';
       }
     } else {
       parsedText = buffer.toString('utf-8');
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
 
       if (uploadError) {
         console.error('Storage upload error:', uploadError);
-        // Continue without storage — save text to DB only
+        // Continue without storage â€” save text to DB only
       }
 
       // Ensure profile row exists (resumes.user_id FK references profiles.id)
@@ -95,7 +95,7 @@ export async function POST(request: Request) {
         console.error('Profile upsert error:', e);
       }
 
-      // Sanitize text — remove backslashes and control chars that break PostgreSQL unicode parsing
+      // Sanitize text â€” remove backslashes and control chars that break PostgreSQL unicode parsing
       parsedText = parsedText
         .replace(/\\/g, '')
         .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH /api/resume — update parsed_text or parsed_structure
+// PATCH /api/resume â€” update parsed_text or parsed_structure
 export async function PATCH(request: Request) {
   try {
     const { resumeId, userId, parsed_text, parsed_structure } = await request.json();
@@ -195,7 +195,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-// GET /api/resume?userId=xxx — list user's resumes
+// GET /api/resume?userId=xxx â€” list user's resumes
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -209,7 +209,7 @@ export async function GET(request: Request) {
       return NextResponse.json({
         resumes: [],
         mock: true,
-        message: 'Database not configured — no resumes stored yet',
+        message: 'Database not configured â€” no resumes stored yet',
       });
     }
 
@@ -217,7 +217,7 @@ export async function GET(request: Request) {
 
     const { data, error } = await supabase
       .from('resumes')
-      .select('id, file_path, parsed_structure, ats_score, created_at')
+      .select('id, file_path, parsed_text, parsed_structure, ats_score, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -242,7 +242,7 @@ export async function GET(request: Request) {
   }
 }
 
-// DELETE /api/resume — delete a resume
+// DELETE /api/resume â€” delete a resume
 export async function DELETE(request: Request) {
   try {
     const { resumeId, userId, filePath } = await request.json();
@@ -277,3 +277,4 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
