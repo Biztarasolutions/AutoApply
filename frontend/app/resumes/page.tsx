@@ -893,15 +893,6 @@ export default function ResumesPage() {
                         </div>
                       </div>
                     </div>
-                    {mode === 'edit' && (
-                      <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
-                        <button onClick={cancelEdit} style={btnSecondary}>Cancel</button>
-                        <button onClick={saveEdit} disabled={isSaving} style={btnPrimary}>
-                          {isSaving ? <Loader size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={14} />}
-                          Save Changes
-                        </button>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
