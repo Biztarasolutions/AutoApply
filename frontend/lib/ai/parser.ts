@@ -95,13 +95,14 @@ function splitIntoSections(text: string): TextSection[] {
   for (const { name, keywords } of SECTION_DEFS) {
     // Try longer keywords first so "Work Experience" beats "Experience"
     for (const kw of [...keywords].sort((a, b) => b.length - a.length)) {
-      // Use word-boundary style: keyword must not be preceded or followed by a letter
+      // Case-SENSITIVE match so "skills" mid-sentence doesn't match the "Skills" header.
+      // Keywords in SECTION_DEFS are already Title-Cased.
       const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-      const re = new RegExp(`(?:^|(?<![a-zA-Z]))${escaped}(?![a-zA-Z])`, 'i');
+      const re = new RegExp(`(?:^|(?<![a-zA-Z]))${escaped}(?![a-zA-Z])`); // no 'i' flag
       const m = re.exec(text);
       if (m) {
         hits.push({ name, headerStart: m.index, headerEnd: m.index + m[0].length });
-        break; // found this section; don't try shorter keywords
+        break;
       }
     }
   }
@@ -422,29 +423,28 @@ export function extractExperience(expSection: string): any[] {
     }];
   }
 
-  // Split preamble (text before first header) into segments, one per job.
+  // Filter invalid headers FIRST so indices (i) are correct during map.
+  const validMatches = headerMatches.filter(hdr => /^[A-Z]/.test(hdr.roleCompany));
+  if (validMatches.length === 0) return [];
+
+  // Split preamble (text before first valid header) into segments, one per job.
   // In single-paragraph PDF layouts the job descriptions appear BEFORE the job
-  // header lines that they describe.  We split the preamble by the number of
-  // jobs so each job gets a roughly equal share of description text.
-  const preambleRaw = stripContactNoise(expSection.slice(0, headerMatches[0].idx));
+  // header lines that they describe.
+  const preambleRaw = stripContactNoise(expSection.slice(0, validMatches[0].idx));
   const sentences   = preambleRaw.match(/[^.!?]+[.!?]+\s*/g) ?? (preambleRaw.length > 0 ? [preambleRaw] : []);
-  const n           = headerMatches.length;
+  const n           = validMatches.length;
   const perJob      = Math.max(1, Math.ceil(sentences.length / n));
 
-  return headerMatches.map((hdr, i) => {
-    // Require group-1 to start with an actual uppercase letter (guards against
-    // the 'i' flag in the RegExp making [A-Z] match lowercase characters).
-    if (!/^[A-Z]/.test(hdr.roleCompany)) return null;
-
+  return validMatches.map((hdr, i) => {
     const { role, company } = splitRoleCompany(hdr.roleCompany);
 
     const contentStart = hdr.idx + hdr.len;
-    const contentEnd   = headerMatches[i + 1]?.idx ?? expSection.length;
+    const contentEnd   = validMatches[i + 1]?.idx ?? expSection.length;
     const rawContent   = stripContactNoise(expSection.slice(contentStart, contentEnd));
 
-    // Assign preamble sentences to this job (reversed order: last job → first sentences)
+    // Assign preamble sentences in forward order (job 0 = first sentences).
     const preambleForJob = sentences
-      .slice(Math.max(0, sentences.length - (i + 1) * perJob), sentences.length - i * perJob)
+      .slice(i * perJob, Math.min(sentences.length, (i + 1) * perJob))
       .join('')
       .trim();
 
@@ -461,7 +461,7 @@ export function extractExperience(expSection: string): any[] {
       description: prose.slice(0, 1500),
       achievements: bullets.slice(0, 8),
     };
-  }).filter(Boolean) as any[];
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
