@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -163,7 +163,7 @@ export default function Tracker() {
                     paddingBottom: '0.5rem'
                   }}>
                     <h4 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-main)' }}>{col.title}</h4>
-                    <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--text-main)' }}>
+                    <span className="badge" style={{ background: 'rgba(0,0,0,0.05)', color: 'var(--text-main)' }}>
                       {columnApps.length}
                     </span>
                   </div>
@@ -173,7 +173,7 @@ export default function Tracker() {
                     {columnApps.length === 0 ? (
                       <div className="flex-center" style={{ 
                         flex: 1, 
-                        border: '1.5px dashed rgba(255,255,255,0.03)', 
+                        border: '1.5px dashed rgba(0,0,0,0.18)', 
                         borderRadius: 'var(--radius-sm)',
                         padding: '1.5rem',
                         textAlign: 'center',
@@ -231,7 +231,7 @@ export default function Tracker() {
                           {/* Quick Actions (Move column) */}
                           <div style={{ 
                             marginTop: '0.5rem', 
-                            borderTop: '1px solid rgba(255,255,255,0.05)', 
+                            borderTop: '1px solid rgba(0,0,0,0.05)', 
                             paddingTop: '0.5rem',
                             display: 'flex',
                             justifyContent: 'space-between',
@@ -275,3 +275,4 @@ export default function Tracker() {
     </div>
   );
 }
+

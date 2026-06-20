@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -307,7 +307,7 @@ export default function Dashboard() {
                   <strong>Skills extracted:</strong>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
                     {(profile.skills || []).map((skill: string, idx: number) => (
-                      <span key={idx} className="badge badge-info" style={{ background: 'rgba(255, 255, 255, 0.05)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
+                      <span key={idx} className="badge badge-info" style={{ background: 'rgba(0, 0, 0, 0.05)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
                         {skill}
                       </span>
                     ))}
@@ -443,7 +443,7 @@ export default function Dashboard() {
                       <div>
                         <h4 style={{ fontSize: '1.1rem', color: 'var(--text-main)' }}>{job.title}</h4>
                         <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                          {job.company} — <span style={{ fontSize: '0.85rem' }}>{job.location || 'Remote'}</span>
+                          {job.company} â€” <span style={{ fontSize: '0.85rem' }}>{job.location || 'Remote'}</span>
                         </p>
                       </div>
                       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -456,7 +456,7 @@ export default function Dashboard() {
 
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                       {(job.requirements || []).slice(0, 3).map((req: string, i: number) => (
-                        <span key={i} style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
+                        <span key={i} style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'rgba(0, 0, 0, 0.04)', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
                           {req}
                         </span>
                       ))}
@@ -511,7 +511,7 @@ export default function Dashboard() {
                     {/* Detailed Match Report lists */}
                     {matchReport && (
                       <div style={{ 
-                        background: 'rgba(255,255,255,0.01)', 
+                        background: 'rgba(0,0,0,0.02)', 
                         padding: '0.75rem 1rem', 
                         borderRadius: 'var(--radius-sm)', 
                         fontSize: '0.82rem', 
@@ -569,7 +569,7 @@ export default function Dashboard() {
             }}>
               {/* Header */}
               <div style={{ 
-                background: 'rgba(255,255,255,0.02)', 
+                background: 'rgba(0,0,0,0.03)', 
                 borderBottom: '1px solid var(--border-color)', 
                 padding: '0.75rem 1.25rem',
                 display: 'flex',
@@ -630,7 +630,7 @@ export default function Dashboard() {
                     background: 'rgba(16,185,129,0.05)',
                     textAlign: 'center'
                   }}>
-                    🎉 APPLICATION SUBMITTED SUCCESSFULLY!
+                    ðŸŽ‰ APPLICATION SUBMITTED SUCCESSFULLY!
                   </div>
                 )}
               </div>
@@ -684,3 +684,5 @@ export default function Dashboard() {
     </div>
   );
 }
+
+

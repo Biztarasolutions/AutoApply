@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -21,7 +21,7 @@ interface Resume {
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '0.6rem 0.85rem',
-  background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-color)',
+  background: 'rgba(0,0,0,0.04)', border: '1px solid var(--border-color)',
   borderRadius: 'var(--radius-sm)', color: 'var(--text-main)',
   fontSize: '0.88rem', outline: 'none', fontFamily: 'inherit',
 };
@@ -246,7 +246,7 @@ export default function ResumesPage() {
                         {getDisplayName(resume)}
                       </div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.2rem' }}>
-                        {s.headline || 'No headline'} · Uploaded {formatDate(resume.created_at)}
+                        {s.headline || 'No headline'} Â· Uploaded {formatDate(resume.created_at)}
                       </div>
                       {s.skills?.length > 0 && (
                         <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginTop: '0.4rem' }}>
@@ -292,7 +292,7 @@ export default function ResumesPage() {
                     <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
 
                       {isEditing ? (
-                        /* ── EDIT MODE ── */
+                        /* â”€â”€ EDIT MODE â”€â”€ */
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
                           {/* Basic Info */}
@@ -335,7 +335,7 @@ export default function ResumesPage() {
                                 value={newSkill}
                                 onChange={e => setNewSkill(e.target.value)}
                                 onKeyDown={e => e.key === 'Enter' && addSkill()}
-                                placeholder="Add skill…"
+                                placeholder="Add skillâ€¦"
                                 style={{ ...inputStyle, flex: 1 }}
                               />
                               <button onClick={addSkill} style={{
@@ -358,7 +358,7 @@ export default function ResumesPage() {
                               }}><Plus size={12} /> Add</button>
                             </div>
                             {(editStructure.experience || []).map((exp: any, i: number) => (
-                              <div key={i} style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: '0.75rem' }}>
+                              <div key={i} style={{ padding: '1rem', background: 'rgba(0,0,0,0.03)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginBottom: '0.75rem' }}>
                                 <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
                                   <button onClick={() => removeExp(i)} style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', display: 'flex' }}><X size={14} /></button>
                                 </div>
@@ -396,7 +396,7 @@ export default function ResumesPage() {
                           <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
                             <button onClick={cancelEdit} style={{
                               padding: '0.6rem 1.25rem', borderRadius: 'var(--radius-md)',
-                              background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+                              background: 'rgba(0,0,0,0.05)', border: '1px solid var(--border-color)',
                               color: 'var(--text-muted)', cursor: 'pointer', fontWeight: 600,
                             }}>Cancel</button>
                             <button onClick={() => saveEdit(resume.id)} disabled={isSaving} style={{
@@ -406,12 +406,12 @@ export default function ResumesPage() {
                               color: 'white', cursor: isSaving ? 'not-allowed' : 'pointer', fontWeight: 700,
                             }}>
                               {isSaving ? <Loader size={15} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={15} />}
-                              {isSaving ? 'Saving…' : 'Save Changes'}
+                              {isSaving ? 'Savingâ€¦' : 'Save Changes'}
                             </button>
                           </div>
                         </div>
                       ) : (
-                        /* ── VIEW MODE ── */
+                        /* â”€â”€ VIEW MODE â”€â”€ */
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                           {s.full_name && (
                             <div>
@@ -438,7 +438,7 @@ export default function ResumesPage() {
                               {s.experience.map((exp: any, i: number) => (
                                 <div key={i} style={{ paddingLeft: '0.85rem', borderLeft: '2px solid var(--color-primary)', marginBottom: '0.85rem' }}>
                                   <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.92rem' }}>{exp.role || exp.title}</div>
-                                  <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{exp.company} · {exp.dates || exp.duration}</div>
+                                  <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{exp.company} Â· {exp.dates || exp.duration}</div>
                                   {exp.description && <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginTop: '0.3rem' }}>{exp.description}</p>}
                                 </div>
                               ))}
@@ -451,7 +451,7 @@ export default function ResumesPage() {
                               {s.education.map((edu: any, i: number) => (
                                 <div key={i} style={{ paddingLeft: '0.85rem', borderLeft: '2px solid var(--color-accent)', marginBottom: '0.6rem' }}>
                                   <div style={{ fontWeight: 600, color: 'var(--text-main)', fontSize: '0.9rem' }}>{edu.degree} in {edu.field}</div>
-                                  <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{edu.school} · {edu.dates}</div>
+                                  <div style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{edu.school} Â· {edu.dates}</div>
                                 </div>
                               ))}
                             </div>
@@ -499,3 +499,4 @@ const btnStyle = (color: string, alpha: string, borderColor?: string): React.CSS
   color: color === '#ef4444' ? 'var(--color-danger)' : color === '#7c3aed' ? 'var(--color-primary)' : 'var(--text-muted)',
   cursor: 'pointer', display: 'flex', alignItems: 'center',
 });
+

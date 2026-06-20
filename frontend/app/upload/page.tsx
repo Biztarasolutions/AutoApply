@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -164,7 +164,7 @@ export default function UploadPage() {
             Resume Manager
           </h1>
           <p style={{ color: 'var(--text-muted)' }}>
-            Upload your resume — we'll parse and optimize it for ATS systems automatically.
+            Upload your resume â€” we'll parse and optimize it for ATS systems automatically.
           </p>
         </div>
 
@@ -256,7 +256,7 @@ export default function UploadPage() {
                 ))}
               </div>
               <p style={{ color: 'var(--text-muted)', marginTop: '1rem', fontSize: '0.8rem' }}>
-                Max 5MB • Automatically parsed by AI
+                Max 5MB â€¢ Automatically parsed by AI
               </p>
             </div>
           )}
@@ -329,7 +329,7 @@ export default function UploadPage() {
                           {skills.map((s: string) => (
                             <span key={s} style={{
                               padding: '0.1rem 0.4rem',
-                              background: 'rgba(255,255,255,0.05)',
+                              background: 'rgba(0,0,0,0.05)',
                               color: 'var(--text-muted)',
                               borderRadius: '4px', fontSize: '0.72rem', border: '1px solid var(--border-color)'
                             }}>{s}</span>
@@ -348,7 +348,7 @@ export default function UploadPage() {
                         onClick={() => setPreviewResume(resume)}
                         style={{
                           padding: '0.5rem', borderRadius: 'var(--radius-sm)',
-                          background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+                          background: 'rgba(0,0,0,0.05)', border: '1px solid var(--border-color)',
                           color: 'var(--text-muted)', cursor: 'pointer', display: 'flex',
                           alignItems: 'center', transition: 'var(--transition)',
                         }}
@@ -363,7 +363,7 @@ export default function UploadPage() {
                           rel="noopener noreferrer"
                           style={{
                             padding: '0.5rem', borderRadius: 'var(--radius-sm)',
-                            background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
+                            background: 'rgba(0,0,0,0.05)', border: '1px solid var(--border-color)',
                             color: 'var(--text-muted)', cursor: 'pointer', display: 'flex',
                             alignItems: 'center', textDecoration: 'none', transition: 'var(--transition)',
                           }}
@@ -446,7 +446,7 @@ export default function UploadPage() {
                     {previewResume.parsed_structure.experience.map((exp: any, i: number) => (
                       <div key={i} style={{ marginBottom: '0.75rem', paddingLeft: '0.75rem', borderLeft: '2px solid var(--color-primary)' }}>
                         <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{exp.title || exp.role}</div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{exp.company} • {exp.duration || exp.period}</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{exp.company} â€¢ {exp.duration || exp.period}</div>
                       </div>
                     ))}
                   </div>
@@ -467,3 +467,4 @@ export default function UploadPage() {
     </div>
   );
 }
+

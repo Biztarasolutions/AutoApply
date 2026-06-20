@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -142,7 +142,7 @@ export default function AnalyticsPage() {
               color: 'var(--color-warning)', fontSize: '0.8rem'
             }}>
               <AlertTriangle size={14} />
-              Demo data — connect Supabase for real analytics
+              Demo data â€” connect Supabase for real analytics
             </div>
           )}
           <button
@@ -235,7 +235,7 @@ export default function AnalyticsPage() {
                         {status.value} ({pct}%)
                       </span>
                     </div>
-                    <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '999px', overflow: 'hidden' }}>
+                    <div style={{ height: '6px', background: 'rgba(0,0,0,0.05)', borderRadius: '999px', overflow: 'hidden' }}>
                       <div style={{
                         width: `${pct}%`, height: '100%',
                         background: status.color, borderRadius: '999px',
@@ -319,7 +319,7 @@ export default function AnalyticsPage() {
                         <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{rate.label}</span>
                         <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-main)' }}>{rate.value}%</span>
                       </div>
-                      <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '999px', overflow: 'hidden' }}>
+                      <div style={{ height: '6px', background: 'rgba(0,0,0,0.05)', borderRadius: '999px', overflow: 'hidden' }}>
                         <div style={{
                           width: `${rate.value}%`, height: '100%',
                           background: rate.color, borderRadius: '999px',
@@ -349,3 +349,4 @@ export default function AnalyticsPage() {
     </div>
   );
 }
+

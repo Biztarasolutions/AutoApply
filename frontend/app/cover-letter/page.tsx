@@ -216,7 +216,7 @@ export default function CoverLetterPage() {
                         : '1px solid var(--border-color)',
                       background: tone === t.value
                         ? 'rgba(124, 58, 237, 0.1)'
-                        : 'rgba(255,255,255,0.02)',
+                        : 'rgba(0,0,0,0.03)',
                       cursor: 'pointer',
                       textAlign: 'left',
                       transition: 'var(--transition)',
@@ -299,7 +299,7 @@ export default function CoverLetterPage() {
                   onChange={(e) => setCoverLetter(e.target.value)}
                   style={{
                     width: '100%', height: '100%', minHeight: '480px',
-                    background: 'rgba(255,255,255,0.03)',
+                    background: 'rgba(0,0,0,0.02)',
                     border: '1px solid var(--border-color)',
                     borderRadius: 'var(--radius-md)',
                     color: 'var(--text-main)',
@@ -338,7 +338,7 @@ export default function CoverLetterPage() {
 const inputStyle: React.CSSProperties = {
   width: '100%',
   padding: '0.65rem 0.9rem',
-  background: 'rgba(255,255,255,0.04)',
+  background: 'rgba(0,0,0,0.03)',
   border: '1px solid var(--border-color)',
   borderRadius: 'var(--radius-sm)',
   color: 'var(--text-main)',
@@ -350,7 +350,7 @@ const actionBtnStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: '0.35rem',
   padding: '0.4rem 0.75rem',
   borderRadius: 'var(--radius-sm)',
-  background: 'rgba(255,255,255,0.04)',
+  background: 'rgba(0,0,0,0.03)',
   border: '1px solid var(--border-color)',
   color: 'var(--text-muted)',
   cursor: 'pointer',
