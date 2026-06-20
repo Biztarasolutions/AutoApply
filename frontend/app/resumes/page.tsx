@@ -453,7 +453,7 @@ export default function ResumesPage() {
                 {isEditing ? <EditMode
                   editStructure={editStructure} editText={editText} newSkill={newSkill}
                   showRawText={showRawText} isSaving={isSaving}
-                  setField={setField} setEditText={t => { setEditText(t); setIsDirty(true); }}
+                  setField={setField} setEditText={(t: string) => { setEditText(t); setIsDirty(true); }}
                   setNewSkill={setNewSkill} setShowRawText={setShowRawText}
                   addSkill={addSkill} removeSkill={removeSkill}
                   updateExp={updateExp} addExp={addExp} removeExp={removeExp}
