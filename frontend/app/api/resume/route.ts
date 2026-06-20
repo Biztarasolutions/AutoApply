@@ -47,9 +47,7 @@ export async function POST(request: Request) {
         // unpdf: serverless-safe PDF text extraction (bundles pdfjs with all browser polyfills)
         const { extractText } = await import('unpdf');
         const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
-        parsedText = text.split('
-').map((l: string) => l.replace(/[ 	]+/g, ' ').trim()).filter((l: string) => l.length > 0).join('
-');
+        parsedText = text.split(/\r?\n/).map((l: string) => l.replace(/[ \t]+/g, ' ').trim()).filter((l: string) => l.length > 0).join('\n');
         console.log('PDF extraction success, length:', parsedText.length);
       } catch (e: any) {
         console.error('PDF parse error:', e?.message || e);
