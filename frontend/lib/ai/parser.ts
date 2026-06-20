@@ -396,14 +396,29 @@ const MON = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|J
 const DATE_RANGE = `(?:${MON}\\s+\\d{4}[\\s\\-–]+(?:${MON}\\s+)?(?:\\d{4}|Present|Current|Till\\s+Date|Now)|\\d{4}\\s*[\\-–]\\s*(?:\\d{4}|Present|Current|Now))`;
 
 /**
- * Job-header pattern for PDF format: "Role Company | City | DateRange"
- * Group 1: everything before the first " | " (role + company concatenated)
- * Group 2: city / location
- * Group 3: date range
+ * Job-header pattern for this PDF's two-line format:
+ *   Line 1: Role title (no pipe, no newline)
+ *   Line 2: Company | City | DateRange
+ *
+ * Group 1 = role title  (line before the pipe-separated line)
+ * Group 2 = company     (before first pipe on company line)
+ * Group 3 = location
+ * Group 4 = date range
+ *
+ * Falls back to single-line format handled separately.
+ */
+const JOB_HEADER_RE = new RegExp(
+  `([A-Z][^\\n|]{3,70})\\n([A-Z][^\\n|]{2,60}?)\\s*\\|\\s*([^\\n|]{2,40}?)\\s*\\|\\s*(${DATE_RANGE})`,
+  'g'
+);
+
+/**
+ * Single-line fallback: "RoleCompany | City | DateRange"
+ * Used when the PDF joins role and company on one line.
  */
 const JOB_HEADER_SOURCE = `([A-Z][^|\\n]{5,80}?)\\s+\\|\\s+([^|\\n]{2,40}?)\\s+\\|\\s+(${DATE_RANGE})`;
 
-// Title words used to split "RoleCompany" string at the role terminus
+// Title words used to split "RoleCompany" string at the role terminus (single-line fallback)
 const TITLE_TERMS = /\b(Analyst|Engineer|Developer|Manager|Architect|Director|Consultant|Associate|Specialist|Scientist|Designer|Advisor|Professional|Executive|Officer|Intern|Lead|VP|Head)\b/i;
 
 function splitRoleCompany(combined: string): { role: string; company: string } {
@@ -436,23 +451,52 @@ function stripContactNoise(text: string): string {
     .trim();
 }
 
+interface JobMatch {
+  role: string; company: string; location: string; dates: string;
+  headerStart: number; // start of role line (or single line)
+  headerEnd: number;   // end of company|location|date line
+}
+
 export function extractExperience(expSection: string): any[] {
   if (!expSection) return [];
 
-  const re = new RegExp(JOB_HEADER_SOURCE, 'gi');
-  const headerMatches: Array<{ roleCompany: string; location: string; dates: string; idx: number; len: number }> = [];
+  // ── Phase 1: try two-line format (role\ncompany | city | date) ───────────
+  const twoLineMatches: JobMatch[] = [];
+  JOB_HEADER_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(expSection)) !== null) {
-    headerMatches.push({
-      roleCompany: m[1].trim(),
-      location:    m[2].trim(),
-      dates:       m[3].trim(),
-      idx:         m.index,
-      len:         m[0].length,
+  while ((m = JOB_HEADER_RE.exec(expSection)) !== null) {
+    const role    = m[1].trim();
+    const company = m[2].trim();
+    if (!/^[A-Z]/.test(role)) continue;
+    twoLineMatches.push({
+      role, company,
+      location:    m[3].trim(),
+      dates:       m[4].trim(),
+      headerStart: m.index,
+      headerEnd:   m.index + m[0].length,
     });
   }
 
-  if (headerMatches.length === 0) {
+  // ── Phase 2: single-line fallback (role+company | city | date) ───────────
+  let matches: JobMatch[] = twoLineMatches;
+
+  if (twoLineMatches.length === 0) {
+    const re = new RegExp(JOB_HEADER_SOURCE, 'gi');
+    while ((m = re.exec(expSection)) !== null) {
+      const roleCompany = m[1].trim();
+      if (!/^[A-Z]/.test(roleCompany)) continue;
+      const { role, company } = splitRoleCompany(roleCompany);
+      matches.push({
+        role, company,
+        location:    m[2].trim(),
+        dates:       m[3].trim(),
+        headerStart: m.index,
+        headerEnd:   m.index + m[0].length,
+      });
+    }
+  }
+
+  if (matches.length === 0) {
     return [{
       role: '', company: '', dates: '', location: '',
       description: expSection.slice(0, 600).trim(),
@@ -460,41 +504,37 @@ export function extractExperience(expSection: string): any[] {
     }];
   }
 
-  // Filter invalid headers FIRST so indices (i) are correct during map.
-  const validMatches = headerMatches.filter(hdr => /^[A-Z]/.test(hdr.roleCompany));
-  if (validMatches.length === 0) return [];
+  // ── Phase 3: assign descriptions ─────────────────────────────────────────
+  // For this PDF layout, each job's description appears:
+  //   - Job 0: text BEFORE job 0's header (the preamble)
+  //   - Job N>0: text BETWEEN job N-1's headerEnd and job N's headerStart
+  // Plus any text AFTER job N's headerEnd up to job N+1's headerStart
+  // (handles PDFs where descriptions appear after the header instead).
 
-  // Split preamble (text before first valid header) into segments, one per job.
-  // In single-paragraph PDF layouts the job descriptions appear BEFORE the job
-  // header lines that they describe.
-  const preambleRaw = stripContactNoise(expSection.slice(0, validMatches[0].idx));
-  const sentences   = preambleRaw.match(/[^.!?]+[.!?]+\s*/g) ?? (preambleRaw.length > 0 ? [preambleRaw] : []);
-  const n           = validMatches.length;
-  const perJob      = Math.max(1, Math.ceil(sentences.length / n));
+  return matches.map((hdr, i) => {
+    // Text immediately before this header (between prev headerEnd and this headerStart)
+    const prevEnd    = i === 0 ? 0 : matches[i - 1].headerEnd;
+    const beforeText = stripContactNoise(expSection.slice(prevEnd, hdr.headerStart));
 
-  return validMatches.map((hdr, i) => {
-    const { role, company } = splitRoleCompany(hdr.roleCompany);
+    // Text immediately after this header (between this headerEnd and next headerStart)
+    const afterText  = stripContactNoise(
+      expSection.slice(hdr.headerEnd, matches[i + 1]?.headerStart ?? expSection.length)
+    );
 
-    const contentStart = hdr.idx + hdr.len;
-    const contentEnd   = validMatches[i + 1]?.idx ?? expSection.length;
-    const rawContent   = stripContactNoise(expSection.slice(contentStart, contentEnd));
-
-    // Assign preamble sentences in forward order (job 0 = first sentences).
-    const preambleForJob = sentences
-      .slice(i * perJob, Math.min(sentences.length, (i + 1) * perJob))
-      .join('')
+    // Prefer longer of before/after; combine if both have meaningful content
+    const allContent = [beforeText, afterText]
+      .filter(t => t.length > 30)
+      .join(' ')
       .trim();
-
-    const allContent = [preambleForJob, rawContent].filter(Boolean).join(' ').trim();
 
     const bullets = extractBullets(allContent);
     const prose   = allContent.replace(/[•·▪▸→][^•·▪▸→]*/g, '').replace(/\s+/g, ' ').trim();
 
     return {
-      role,
-      company,
-      dates:    hdr.dates,
-      location: hdr.location,
+      role:        hdr.role,
+      company:     hdr.company,
+      dates:       hdr.dates,
+      location:    hdr.location,
       description: prose.slice(0, 1500),
       achievements: bullets.slice(0, 8),
     };
