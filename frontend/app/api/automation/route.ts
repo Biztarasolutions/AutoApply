@@ -1,16 +1,16 @@
 import { NextResponse } from 'next/server';
-import { Client } from 'pg';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as os from 'os';
 
-// In-memory log store used when DATABASE_URL is absent
+// In-memory log store — keyed by applicationId
+// Railway service streams steps; we poll this from the logs endpoint
 const mockApplicationsDb: Record<string, any> = {};
+
+const AUTOMATION_URL = process.env.AUTOMATION_SERVER_URL || '';
+const AUTOMATION_SECRET = process.env.AUTOMATION_SECRET || '';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { userId, jobId, jobUrl, jobTitle, company, profile: clientProfile, resumeId } = body;
+    const { userId, jobId, jobUrl, jobTitle, company, profile } = body;
 
     if (!userId || !jobId) {
       return NextResponse.json({ error: 'userId and jobId are required' }, { status: 400 });
@@ -18,60 +18,80 @@ export async function POST(request: Request) {
 
     const applicationId = crypto.randomUUID();
 
-    // Initialise in-memory entry immediately so the log poller has something to read
+    // Initialise log entry so the poller has something to read immediately
     mockApplicationsDb[applicationId] = {
-      id: applicationId,
-      user_id: userId,
-      job_id: jobId,
-      status: 'pending',
-      created_at: new Date().toISOString(),
       logs: { steps: [], current_step: 'Starting…', status: 'running' },
     };
 
-    // Fetch profile from DB/cache — prefer what the client sent, fall back to API
-    const profile = clientProfile || {};
-
-    // Locate the user's most recent resume PDF if available
-    let resumePath: string | null = null;
-    try {
-      const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
-      if (fs.existsSync(uploadsDir)) {
-        const files = fs.readdirSync(uploadsDir)
-          .filter(f => f.endsWith('.pdf') && f.includes(userId.slice(0, 8)))
-          .map(f => ({ name: f, mtime: fs.statSync(path.join(uploadsDir, f)).mtimeMs }))
-          .sort((a, b) => b.mtime - a.mtime);
-        if (files.length > 0) resumePath = path.join(uploadsDir, files[0].name);
-      }
-    } catch {}
-
-    // Kick off real Playwright runner in background
-    const { runAutoApply } = await import('@/lib/automation/runner');
-    runAutoApply(applicationId, {
-      jobUrl,
-      profile: { ...profile, email: profile.email || userId },
-      resumePath,
-      mockStore: mockApplicationsDb,
-    }).catch((err: any) => {
-      console.error('❌ Automation runner error:', err.message);
+    if (!jobUrl) {
+      // No URL — can't apply
       mockApplicationsDb[applicationId].logs = {
-        steps: [{ step: 'Error', status: 'failed', details: err.message, timestamp: new Date().toISOString() }],
-        current_step: 'Error',
-        status: 'failed',
-        error_message: err.message,
+        steps: [{ step: 'Error', status: 'failed', details: 'No application URL provided for this job. Use "Add Job URL" to paste a direct link.', timestamp: new Date().toISOString() }],
+        current_step: 'Error', status: 'failed',
       };
+      return NextResponse.json({ success: false, error: 'No job URL', applicationId });
+    }
+
+    if (!AUTOMATION_URL) {
+      // Automation server not configured
+      mockApplicationsDb[applicationId].logs = {
+        steps: [{ step: 'Error', status: 'failed', details: 'AUTOMATION_SERVER_URL is not configured. Deploy the automation-server to Railway and add the env var.', timestamp: new Date().toISOString() }],
+        current_step: 'Error', status: 'failed',
+      };
+      return NextResponse.json({ success: false, error: 'Automation server not configured', applicationId });
+    }
+
+    // Fire-and-forget: call the Railway automation server in background
+    runRemoteApply(applicationId, { jobUrl, profile, jobTitle, company }).catch(err => {
+      console.error('Remote apply error:', err.message);
     });
 
-    return NextResponse.json({
-      success: true,
-      message: 'Real automation started.',
-      applicationId,
-    });
+    return NextResponse.json({ success: true, applicationId });
 
-  } catch (error: any) {
-    console.error('❌ Error in automation API:', error);
-    return NextResponse.json({ error: error.message || 'Failed to trigger automation' }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Failed' }, { status: 500 });
   }
 }
 
-// ── Log endpoint uses the same in-memory store ─────────────────────────────────
+async function runRemoteApply(
+  applicationId: string,
+  opts: { jobUrl: string; profile: any; jobTitle?: string; company?: string },
+) {
+  const setLog = (steps: any[], currentStep: string, status: string) => {
+    mockApplicationsDb[applicationId] = {
+      logs: { steps, current_step: currentStep, status },
+    };
+  };
+
+  try {
+    const res = await fetch(`${AUTOMATION_URL}/apply`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(AUTOMATION_SECRET ? { 'x-automation-secret': AUTOMATION_SECRET } : {}),
+      },
+      body: JSON.stringify({
+        jobUrl: opts.jobUrl,
+        profile: opts.profile || {},
+      }),
+      signal: AbortSignal.timeout(5 * 60 * 1000), // 5 min max
+    });
+
+    const data = await res.json();
+    const steps = data.steps || [];
+    const lastStep = steps[steps.length - 1];
+    const status = res.ok && data.success ? 'success' : 'failed';
+    const currentStep = lastStep?.step || (status === 'success' ? 'Submission Verifying' : 'Error');
+
+    setLog(steps, currentStep, status);
+
+  } catch (err: any) {
+    setLog(
+      [{ step: 'Error', status: 'failed', details: err.message, timestamp: new Date().toISOString() }],
+      'Error',
+      'failed',
+    );
+  }
+}
+
 export { mockApplicationsDb };
