@@ -101,15 +101,19 @@ export default function Dashboard() {
       const appData   = await appRes.json().catch(() => ({}));
       const resumeData = await resumeRes.json().catch(() => ({}));
 
+      const summary = appData.summary || {};
       const queued = typeof window !== 'undefined'
         ? (JSON.parse(localStorage.getItem(`queued-jobs-${userId}`) || '[]') as string[]).length
         : 0;
+      const applied = typeof window !== 'undefined'
+        ? (JSON.parse(localStorage.getItem(`applied-jobs-${userId}`) || '[]') as string[]).length
+        : 0;
 
       setStats({
-        total:        appData.total || 0,
-        interviewing: appData.interviewing || 0,
-        offers:       appData.offers || 0,
-        atsAvg:       appData.avgAtsScore || 0,
+        total:        applied || summary.totalApplications || 0,
+        interviewing: summary.interviewing || 0,
+        offers:       summary.offered || 0,
+        atsAvg:       summary.avgAtsScore || 0,
         queued,
         resumes:      (resumeData.resumes || []).length,
       });

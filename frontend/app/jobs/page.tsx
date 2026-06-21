@@ -234,8 +234,9 @@ export default function JobsPage() {
       addLog(`[${ts()}] Application ID: ${appId}`);
       addLog(`[${ts()}] Browser session initialized`);
 
-      // Poll logs
+      // Poll logs — track logged steps in a local Set to avoid stale closure bug
       let done = false;
+      const loggedSteps = new Set<string>();
       for (let i = 0; i < 60 && !done; i++) {
         await sleep(1500);
         try {
@@ -243,7 +244,8 @@ export default function JobsPage() {
           const ld = await lr.json();
           if (ld.steps) {
             ld.steps.forEach((step: any) => {
-              if (!logLines.some(l => l.includes(step.step))) {
+              if (!loggedSteps.has(step.step)) {
+                loggedSteps.add(step.step);
                 addLog(`[${ts()}] ${step.status === 'success' ? '✓' : '…'} ${step.step}${step.details ? `: ${step.details}` : ''}`);
               }
             });
