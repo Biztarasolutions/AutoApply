@@ -336,7 +336,7 @@ export default function JobsPage() {
     const newJob = {
       id: `custom-${Date.now()}`,
       title: addJobForm.title,
-      company: addJobForm.company || 'Unknown',
+      company: addJobForm.company || '',
       location: addJobForm.location || 'India',
       description: '',
       requirements: [],
