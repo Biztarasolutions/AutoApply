@@ -103,6 +103,7 @@ export default function JobsPage() {
   const [showAddJob, setShowAddJob] = useState(false);
   const [addJobForm, setAddJobForm] = useState({ url: '', title: '', company: '', location: '' });
   const [customJobs, setCustomJobs] = useState<any[]>([]);
+  const [isFetchingMeta, setIsFetchingMeta] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -312,6 +313,24 @@ export default function JobsPage() {
   const ts = () => new Date().toLocaleTimeString('en-US', { hour12: false });
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+  const fetchJobMeta = async (url: string) => {
+    if (!url.startsWith('http')) return;
+    setIsFetchingMeta(true);
+    try {
+      const res = await fetch(`/api/fetch-job-meta?url=${encodeURIComponent(url)}`);
+      const data = await res.json();
+      if (data.title || data.company) {
+        setAddJobForm(p => ({
+          ...p,
+          title:    data.title    || p.title,
+          company:  data.company  || p.company,
+          location: data.location || p.location,
+        }));
+      }
+    } catch {}
+    finally { setIsFetchingMeta(false); }
+  };
+
   const addCustomJob = () => {
     if (!addJobForm.url || !addJobForm.title) return;
     const newJob = {
@@ -383,16 +402,29 @@ export default function JobsPage() {
               Paste a direct Greenhouse, Lever, LinkedIn Easy Apply, or Naukri job URL — the bot will open it and fill your profile automatically.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              <input value={addJobForm.url} onChange={e => setAddJobForm(p => ({ ...p, url: e.target.value }))}
-                placeholder="https://boards.greenhouse.io/company/jobs/123 or LinkedIn/Naukri job URL *"
-                style={{ ...inp, width: '100%', boxSizing: 'border-box' }} />
+              <div style={{ position: 'relative' }}>
+                <input
+                  value={addJobForm.url}
+                  onChange={e => setAddJobForm(p => ({ ...p, url: e.target.value }))}
+                  onBlur={e => fetchJobMeta(e.target.value)}
+                  onPaste={e => {
+                    const pasted = e.clipboardData.getData('text');
+                    setTimeout(() => fetchJobMeta(pasted), 50);
+                  }}
+                  placeholder="Paste LinkedIn / Greenhouse / Lever / Naukri job URL *"
+                  style={{ ...inp, width: '100%', boxSizing: 'border-box', paddingRight: isFetchingMeta ? '2.5rem' : undefined }}
+                />
+                {isFetchingMeta && (
+                  <Loader size={14} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', animation: 'spin 1s linear infinite', color: 'var(--color-primary)' }} />
+                )}
+              </div>
               <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
                 <input value={addJobForm.title} onChange={e => setAddJobForm(p => ({ ...p, title: e.target.value }))}
-                  placeholder="Job title *" style={{ ...inp, flex: 1, minWidth: 160 }} />
+                  placeholder={isFetchingMeta ? 'Fetching…' : 'Job title *'} style={{ ...inp, flex: 1, minWidth: 160 }} />
                 <input value={addJobForm.company} onChange={e => setAddJobForm(p => ({ ...p, company: e.target.value }))}
-                  placeholder="Company" style={{ ...inp, flex: 1, minWidth: 140 }} />
+                  placeholder={isFetchingMeta ? 'Fetching…' : 'Company'} style={{ ...inp, flex: 1, minWidth: 140 }} />
                 <input value={addJobForm.location} onChange={e => setAddJobForm(p => ({ ...p, location: e.target.value }))}
-                  placeholder="Location" style={{ ...inp, flex: 1, minWidth: 120 }} />
+                  placeholder={isFetchingMeta ? 'Fetching…' : 'Location'} style={{ ...inp, flex: 1, minWidth: 120 }} />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
                 <button onClick={() => setShowAddJob(false)} style={btnSecondary}>Cancel</button>

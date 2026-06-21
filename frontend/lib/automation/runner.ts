@@ -391,17 +391,12 @@ async function runSimulation(
   logStep: (name: string, status: 'success' | 'failed' | 'running', details?: string) => Promise<void>,
 ) {
   const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-  const steps = [
-    ['Initialization',      `Browser environment unavailable on this host. Running simulation for ${ats.toUpperCase()} ATS.`],
-    ['Navigation',          `Would navigate to: ${jobUrl}`],
-    ['Form Extraction',     'Detected standard application fields (simulation).'],
-    ['Form Filling',        'Profile data mapped to form fields (simulation).'],
-    ['Resume Uploading',    'Resume would be attached to file input (simulation).'],
-    ['Form Submission',     'Application form would be submitted (simulation).'],
-    ['Submission Verifying','⚠️ Simulation complete. To run real automation, use the app locally with Playwright installed.'],
-  ];
-  for (const [name, details] of steps) {
-    await delay(1200);
-    await logStep(name, 'success', details);
-  }
+  await delay(800);
+  // Mark as failed with a clear explanation — simulation must NOT count as applied
+  await logStep(
+    'Error',
+    'failed',
+    `Real browser automation is not available on this server (Playwright requires a local environment). ` +
+    `To actually apply, run the app locally with "npm run dev" — the bot will open a real browser and fill the form at ${jobUrl}`,
+  );
 }
