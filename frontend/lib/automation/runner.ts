@@ -1,8 +1,12 @@
 // playwright is imported dynamically at runtime so Turbopack doesn't bundle it.
 // On Netlify (no browser binaries) the dynamic import throws and we fall back
 // to the mock simulation. Locally, the real Chromium runs.
-import type { Browser, Page } from 'playwright';
+// No top-level playwright import — types are inlined as `any` to avoid
+// TS module resolution errors at build time on environments without playwright.
 import { Client } from 'pg';
+
+type Browser = any;
+type Page = any;
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
 
