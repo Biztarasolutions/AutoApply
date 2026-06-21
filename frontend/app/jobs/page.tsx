@@ -313,8 +313,24 @@ export default function JobsPage() {
   const ts = () => new Date().toLocaleTimeString('en-US', { hour12: false });
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-  const fetchJobMeta = async (url: string) => {
-    if (!url.startsWith('http')) return;
+  // Converts any LinkedIn URL variant to the canonical /jobs/view/{id}/ form
+  const normalizeJobUrl = (raw: string): string => {
+    try {
+      const u = new URL(raw);
+      if (/linkedin\.com/i.test(u.hostname)) {
+        // search-results or collections pages carry currentJobId param
+        const jobId = u.searchParams.get('currentJobId');
+        if (jobId) return `https://www.linkedin.com/jobs/view/${jobId}/`;
+      }
+    } catch {}
+    return raw;
+  };
+
+  const fetchJobMeta = async (rawUrl: string) => {
+    if (!rawUrl.startsWith('http')) return;
+    const url = normalizeJobUrl(rawUrl);
+    // Update the URL field to the normalized form immediately
+    if (url !== rawUrl) setAddJobForm(p => ({ ...p, url }));
     setIsFetchingMeta(true);
     try {
       const res = await fetch(`/api/fetch-job-meta?url=${encodeURIComponent(url)}`);
@@ -322,6 +338,7 @@ export default function JobsPage() {
       if (data.title || data.company) {
         setAddJobForm(p => ({
           ...p,
+          url,
           title:    data.title    || p.title,
           company:  data.company  || p.company,
           location: data.location || p.location,
@@ -333,6 +350,7 @@ export default function JobsPage() {
 
   const addCustomJob = () => {
     if (!addJobForm.url || !addJobForm.title) return;
+    const applyUrl = normalizeJobUrl(addJobForm.url);
     const newJob = {
       id: `custom-${Date.now()}`,
       title: addJobForm.title,
@@ -340,8 +358,8 @@ export default function JobsPage() {
       location: addJobForm.location || 'India',
       description: '',
       requirements: [],
-      url: addJobForm.url,
-      apply_url: addJobForm.url,
+      url: applyUrl,
+      apply_url: applyUrl,
       source: 'Manual',
       salary_range: '',
       tags: ['Custom'],

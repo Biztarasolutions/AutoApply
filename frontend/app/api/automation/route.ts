@@ -33,9 +33,14 @@ export async function POST(request: Request) {
     }
 
     if (!AUTOMATION_URL) {
-      // Automation server not configured
       mockApplicationsDb[applicationId].logs = {
-        steps: [{ step: 'Error', status: 'failed', details: 'AUTOMATION_SERVER_URL is not configured. Deploy the automation-server to Railway and add the env var.', timestamp: new Date().toISOString() }],
+        steps: [{
+          step: 'Error', status: 'failed', timestamp: new Date().toISOString(),
+          details: '⚙️ Automation server not set up yet. To enable real apply: ' +
+            '1) Deploy the automation-server/ folder to Railway.app ' +
+            '2) Add AUTOMATION_SERVER_URL + AUTOMATION_SECRET to Netlify env vars ' +
+            '3) Redeploy. See README for full steps.',
+        }],
         current_step: 'Error', status: 'failed',
       };
       return NextResponse.json({ success: false, error: 'Automation server not configured', applicationId });

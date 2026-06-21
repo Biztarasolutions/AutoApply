@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
-  const url = req.nextUrl.searchParams.get('url');
+  let url = req.nextUrl.searchParams.get('url') || '';
   if (!url) return NextResponse.json({ error: 'url required' }, { status: 400 });
+
+  // Normalise LinkedIn search-results URLs to canonical job view URL
+  try {
+    const u = new URL(url);
+    if (/linkedin\.com/i.test(u.hostname)) {
+      const jobId = u.searchParams.get('currentJobId');
+      if (jobId) url = `https://www.linkedin.com/jobs/view/${jobId}/`;
+    }
+  } catch {}
 
   // ── 1. Parse info directly from the URL (no fetch needed) ─────────────────
   const fromUrl = parseFromUrl(url);
