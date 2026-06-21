@@ -307,9 +307,10 @@ export async function runAutoApply(
 
     // Dynamic import so Turbopack/Netlify doesn't try to bundle playwright at build time.
     // Throws when browser binaries aren't available (Netlify) → caught below → simulation.
-    let chromium: typeof import('playwright')['chromium'];
+    let chromium: any;
     try {
-      ({ chromium } = await import('playwright'));
+      const pw = await import('playwright');
+      chromium = (pw as any).chromium;
     } catch {
       await runSimulation(applicationId, jobUrl, ats, logStep);
       return;
