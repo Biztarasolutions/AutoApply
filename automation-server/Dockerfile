@@ -2,13 +2,11 @@ FROM mcr.microsoft.com/playwright:v1.44.0-jammy
 
 WORKDIR /app
 
-COPY package.json ./
+# Copy only the automation-server subfolder (build context = repo root)
+COPY automation-server/package.json ./
 RUN npm install
 
-# Playwright browsers are already bundled in the base image above
-# (mcr.microsoft.com/playwright includes chromium + system deps)
-
-COPY . .
+COPY automation-server/ .
 
 EXPOSE 4000
 
