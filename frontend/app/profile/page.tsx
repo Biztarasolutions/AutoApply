@@ -6,7 +6,8 @@ import { supabase } from '@/lib/supabase';
 import {
   User, MapPin, Briefcase, DollarSign, Globe, Save, CheckCircle2,
   AlertCircle, Loader, Tag, Monitor, Building2, Target, Star,
-  FileText, Plus, X, ChevronDown, ChevronUp, Settings,
+  FileText, Plus, X, ChevronDown, ChevronUp, Settings, Lock,
+  Eye, EyeOff, Shield,
 } from 'lucide-react';
 
 // ── Shared styles ─────────────────────────────────────────────────────────────
@@ -80,6 +81,11 @@ const DEFAULT_PROFILE = {
   // Additional
   skills: [] as string[],
   languages: [] as string[],
+  // Job board credentials (stored locally only)
+  linkedin_email: '',
+  linkedin_password: '',
+  naukri_email: '',
+  naukri_password: '',
 };
 
 type Profile = typeof DEFAULT_PROFILE;
@@ -97,6 +103,9 @@ export default function ProfilePage() {
   const [locInput, setLocInput] = useState('');
   const [skillInput, setSkillInput] = useState('');
   const [skipInput, setSkipInput] = useState('');
+  // Password visibility toggles
+  const [showLinkedInPw, setShowLinkedInPw] = useState(false);
+  const [showNaukriPw, setShowNaukriPw] = useState(false);
 
   useEffect(() => {
     const init = async () => {
@@ -162,13 +171,14 @@ export default function ProfilePage() {
     if (!user) return;
     setIsSaving(true);
     try {
-      const res = await fetch('/api/profile', {
+      // Strip job-board passwords before sending to server — stored only in localStorage
+      const { linkedin_password, naukri_password, ...profileForServer } = profile;
+      await fetch('/api/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: user.id, ...profile }),
+        body: JSON.stringify({ userId: user.id, ...profileForServer }),
       });
-      const data = await res.json();
-      // Cache locally regardless of DB availability
+      // Full profile (incl. credentials) cached locally
       localStorage.setItem(`profile-${user.id}`, JSON.stringify(profile));
       setIsDirty(false);
       setMsg({ type: 'success', text: 'Profile saved successfully.' });
@@ -350,6 +360,133 @@ export default function ProfilePage() {
                 <span key={sk} style={chip}>{sk}<button onClick={() => removeFromArray('skills', sk)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: 0, display: 'flex' }}><X size={11} /></button></span>
               ))}
               {profile.skills.length === 0 && <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Add skills that appear on your resume</span>}
+            </div>
+          </section>
+
+          {/* ── Job Board Credentials ─────────────────────────────────────── */}
+          <section className="glass-panel" style={{ padding: '1.5rem' }}>
+            <div style={secHdr}><Lock size={13} /> Job Board Credentials</div>
+
+            {/* Security notice */}
+            <div style={{ display: 'flex', gap: '0.65rem', padding: '0.85rem 1rem', background: 'rgba(124,58,237,0.06)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(124,58,237,0.2)', marginBottom: '1.25rem' }}>
+              <Shield size={15} style={{ color: 'var(--color-primary)', flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                <strong style={{ color: 'var(--text-main)' }}>Stored locally only.</strong> Your passwords are saved in this browser's localStorage and are <strong>never sent to any server</strong>. They are only used by the local Playwright bot when you click Apply.
+              </div>
+            </div>
+
+            {/* LinkedIn */}
+            <div style={{ marginBottom: '1.25rem', padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'rgba(0,119,181,0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                <div style={{ width: 28, height: 28, borderRadius: 6, background: '#0077b5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: 'white', fontWeight: 900, fontSize: '0.75rem' }}>in</span>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>LinkedIn</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Used for LinkedIn Easy Apply jobs</div>
+                </div>
+                {profile.linkedin_email && profile.linkedin_password && (
+                  <span style={{ marginLeft: 'auto', fontSize: '0.72rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '0.2rem 0.55rem', borderRadius: 999, border: '1px solid rgba(16,185,129,0.25)' }}>
+                    ✓ Connected
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>LinkedIn Email</label>
+                  <input
+                    type="email"
+                    value={profile.linkedin_email}
+                    onChange={e => set('linkedin_email', e.target.value)}
+                    placeholder="your@email.com"
+                    style={{ ...inp }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>LinkedIn Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showLinkedInPw ? 'text' : 'password'}
+                      value={profile.linkedin_password}
+                      onChange={e => set('linkedin_password', e.target.value)}
+                      placeholder="••••••••"
+                      style={{ ...inp, paddingRight: '2.5rem' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLinkedInPw(p => !p)}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
+                    >
+                      {showLinkedInPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+                <a
+                  href="https://www.linkedin.com/login"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: '#0077b5', textDecoration: 'none', fontWeight: 600 }}
+                >
+                  Open LinkedIn to verify your credentials →
+                </a>
+              </div>
+            </div>
+
+            {/* Naukri */}
+            <div style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'rgba(35,149,65,0.03)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.85rem' }}>
+                <div style={{ width: 28, height: 28, borderRadius: 6, background: '#239541', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: 'white', fontWeight: 900, fontSize: '0.65rem' }}>N</span>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>Naukri</div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Used for Naukri.com job applications</div>
+                </div>
+                {profile.naukri_email && profile.naukri_password && (
+                  <span style={{ marginLeft: 'auto', fontSize: '0.72rem', fontWeight: 700, color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '0.2rem 0.55rem', borderRadius: 999, border: '1px solid rgba(16,185,129,0.25)' }}>
+                    ✓ Connected
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>Naukri Email</label>
+                  <input
+                    type="email"
+                    value={profile.naukri_email}
+                    onChange={e => set('naukri_email', e.target.value)}
+                    placeholder="your@email.com"
+                    style={{ ...inp }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '0.3rem' }}>Naukri Password</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type={showNaukriPw ? 'text' : 'password'}
+                      value={profile.naukri_password}
+                      onChange={e => set('naukri_password', e.target.value)}
+                      placeholder="••••••••"
+                      style={{ ...inp, paddingRight: '2.5rem' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNaukriPw(p => !p)}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}
+                    >
+                      {showNaukriPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </div>
+                </div>
+                <a
+                  href="https://www.naukri.com/nlogin/login"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: '#239541', textDecoration: 'none', fontWeight: 600 }}
+                >
+                  Open Naukri to verify your credentials →
+                </a>
+              </div>
             </div>
           </section>
 
