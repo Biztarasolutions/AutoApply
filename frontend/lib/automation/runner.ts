@@ -1,4 +1,7 @@
-import { chromium, Browser, Page } from 'playwright';
+// playwright is imported dynamically at runtime so Turbopack doesn't bundle it.
+// On Netlify (no browser binaries) the dynamic import throws and we fall back
+// to the mock simulation. Locally, the real Chromium runs.
+import type { Browser, Page } from 'playwright';
 import { Client } from 'pg';
 
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -298,10 +301,20 @@ export async function runAutoApply(
 
     const ats = detectATS(jobUrl);
 
+    // Dynamic import so Turbopack/Netlify doesn't try to bundle playwright at build time.
+    // Throws when browser binaries aren't available (Netlify) → caught below → simulation.
+    let chromium: typeof import('playwright')['chromium'];
+    try {
+      ({ chromium } = await import('playwright'));
+    } catch {
+      await runSimulation(applicationId, jobUrl, ats, logStep);
+      return;
+    }
+
     await logStep('Initialization', 'success',
       `Chromium launched. ATS detected: ${ats.toUpperCase()}.`);
 
-    browser = await chromium.launch({ headless: true });
+    browser = await (chromium as any).launch({ headless: true }) as Browser;
     const ctx = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 800 },
@@ -359,7 +372,31 @@ export async function runAutoApply(
     steps.push({ step: 'Error', status: 'failed', details: msg, timestamp: new Date().toISOString() });
     await writeLog(dbClient, mockStore, applicationId, steps, 'Error', 'failed', msg);
   } finally {
-    if (browser) await browser.close();
+    if (browser) await (browser as any).close();
     if (dbClient) await dbClient.end().catch(() => {});
+  }
+}
+
+// ── Simulation fallback (Netlify / no Playwright binaries) ────────────────────
+
+async function runSimulation(
+  applicationId: string,
+  jobUrl: string,
+  ats: string,
+  logStep: (name: string, status: 'success' | 'failed' | 'running', details?: string) => Promise<void>,
+) {
+  const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+  const steps = [
+    ['Initialization',      `Browser environment unavailable on this host. Running simulation for ${ats.toUpperCase()} ATS.`],
+    ['Navigation',          `Would navigate to: ${jobUrl}`],
+    ['Form Extraction',     'Detected standard application fields (simulation).'],
+    ['Form Filling',        'Profile data mapped to form fields (simulation).'],
+    ['Resume Uploading',    'Resume would be attached to file input (simulation).'],
+    ['Form Submission',     'Application form would be submitted (simulation).'],
+    ['Submission Verifying','⚠️ Simulation complete. To run real automation, use the app locally with Playwright installed.'],
+  ];
+  for (const [name, details] of steps) {
+    await delay(1200);
+    await logStep(name, 'success', details);
   }
 }
