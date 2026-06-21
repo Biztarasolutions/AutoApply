@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Briefcase, LayoutDashboard, Calendar, LogIn, LogOut, User, Upload, BarChart2, FileText } from 'lucide-react';
+import {
+  Briefcase, LayoutDashboard, Calendar, LogIn, LogOut, User, Upload,
+  BarChart2, FileText, Search, UserCircle,
+} from 'lucide-react';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -25,6 +28,7 @@ export default function Navbar() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) setUser(session.user);
+      else setUser(null);
     });
 
     return () => subscription.unsubscribe();
@@ -37,6 +41,17 @@ export default function Navbar() {
     window.location.href = '/';
   };
 
+  const navLink = (href: string, label: string, icon: React.ReactNode, match?: string[]) => {
+    const active = match ? match.some(m => pathname === m || pathname.startsWith(m + '/')) : pathname === href;
+    return (
+      <li>
+        <Link href={href} className={`nav-link ${active ? 'active' : ''} flex-center`} style={{ gap: '0.25rem' }}>
+          {icon}<span>{label}</span>
+        </Link>
+      </li>
+    );
+  };
+
   return (
     <header className="nav-header">
       <div className="container nav-container">
@@ -47,80 +62,32 @@ export default function Navbar() {
         <nav>
           <ul className="nav-links">
             <li>
-              <Link href="/" className={`nav-link ${pathname === '/' ? 'active' : ''}`}>
-                Home
-              </Link>
+              <Link href="/" className={`nav-link ${pathname === '/' ? 'active' : ''}`}>Home</Link>
             </li>
             {user && (
               <>
-                <li>
-                  <Link 
-                    href="/dashboard" 
-                    className={`nav-link ${pathname === '/dashboard' ? 'active' : ''} flex-center`}
-                    style={{ gap: '0.25rem' }}
-                  >
-                    <LayoutDashboard size={16} />
-                    <span>Dashboard</span>
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/tracker"
-                    className={`nav-link ${pathname === '/tracker' ? 'active' : ''} flex-center`}
-                    style={{ gap: '0.25rem' }}
-                  >
-                    <Calendar size={16} />
-                    <span>Tracker</span>
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/resumes"
-                    className={`nav-link ${pathname === '/resumes' || pathname === '/upload' ? 'active' : ''} flex-center`}
-                    style={{ gap: '0.25rem' }}
-                  >
-                    <Upload size={16} />
-                    <span>Resumes</span>
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/cover-letter"
-                    className={`nav-link ${pathname === '/cover-letter' ? 'active' : ''} flex-center`}
-                    style={{ gap: '0.25rem' }}
-                  >
-                    <FileText size={16} />
-                    <span>Cover Letter</span>
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/analytics"
-                    className={`nav-link ${pathname === '/analytics' ? 'active' : ''} flex-center`}
-                    style={{ gap: '0.25rem' }}
-                  >
-                    <BarChart2 size={16} />
-                    <span>Analytics</span>
-                  </Link>
-                </li>
+                {navLink('/dashboard',    'Dashboard',    <LayoutDashboard size={15} />)}
+                {navLink('/jobs',         'Jobs',         <Search size={15} />)}
+                {navLink('/tracker',      'Tracker',      <Calendar size={15} />)}
+                {navLink('/resumes',      'Resumes',      <Upload size={15} />, ['/resumes', '/upload'])}
+                {navLink('/cover-letter', 'Cover Letter', <FileText size={15} />)}
+                {navLink('/analytics',    'Analytics',    <BarChart2 size={15} />)}
               </>
             )}
             <li>
               {user ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                  <span className="flex-center" style={{ gap: '0.25rem', fontSize: '0.9rem', color: 'var(--text-muted)' }}>
-                    <User size={14} />
-                    <span>{user.email.split('@')[0]}</span>
-                  </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <Link href="/profile" className={`nav-link ${pathname === '/profile' ? 'active' : ''} flex-center`} style={{ gap: '0.25rem' }}>
+                    <UserCircle size={15} />
+                    <span style={{ maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email.split('@')[0]}</span>
+                  </Link>
                   <button onClick={handleLogout} className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}>
-                    <LogOut size={14} />
-                    <span>Sign Out</span>
+                    <LogOut size={14} /><span>Sign Out</span>
                   </button>
                 </div>
               ) : (
                 <Link href="/auth" className="btn btn-primary" style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}>
-                  <LogIn size={14} />
-                  <span>Get Started</span>
+                  <LogIn size={14} /><span>Get Started</span>
                 </Link>
               )}
             </li>

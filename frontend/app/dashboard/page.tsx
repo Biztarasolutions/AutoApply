@@ -1,688 +1,411 @@
-﻿'use client';
+'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { 
-  FileText, Cpu, CheckCircle2, User, HelpCircle, AlertTriangle, 
-  RefreshCw, Play, Loader, ShieldAlert, Sparkles, Plus, Terminal
+import {
+  FileText, Cpu, CheckCircle2, User, AlertTriangle,
+  RefreshCw, Play, Loader, ShieldAlert, Sparkles, Terminal,
+  Briefcase, Search, BarChart2, Calendar, Zap, Target,
+  TrendingUp, Clock, ArrowRight, BookmarkCheck, Upload,
 } from 'lucide-react';
+
+const cardStyle: React.CSSProperties = {
+  padding: '1.25rem 1.5rem',
+  borderRadius: 'var(--radius-md)',
+  background: 'white',
+  border: '1px solid var(--border-color)',
+  boxShadow: 'var(--shadow-sm)',
+};
+
+const quickActions = [
+  { href: '/jobs',        icon: <Search size={20} />,    label: 'Browse Jobs',      desc: 'Find and auto-apply'       },
+  { href: '/resumes',     icon: <Upload size={20} />,    label: 'My Resumes',       desc: 'Upload, edit, preview'     },
+  { href: '/cover-letter',icon: <FileText size={20} />, label: 'Cover Letters',    desc: 'AI-generated letters'      },
+  { href: '/tracker',     icon: <Calendar size={20} />,  label: 'Job Tracker',      desc: 'Kanban pipeline'           },
+  { href: '/analytics',   icon: <BarChart2 size={20} />, label: 'Analytics',        desc: 'KPIs and trends'           },
+  { href: '/profile',     icon: <User size={20} />,      label: 'My Profile',       desc: 'Preferences & identity'    },
+];
 
 export default function Dashboard() {
   const router = useRouter();
-  
-  // Auth & Profile state
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<any>({
-    full_name: 'Jane Doe',
-    headline: 'Senior Full Stack Engineer',
-    bio: 'Software developer with experience in React and Node.js.',
-    skills: ['JavaScript', 'React', 'Node.js', 'Git'],
-    experience: [],
-    education: []
-  });
 
-  // Resume states
+  const [user, setUser] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [isMock, setIsMock] = useState(false);
+
+  // Quick stats
+  const [stats, setStats] = useState({ total: 0, interviewing: 0, offers: 0, atsAvg: 0, queued: 0, resumes: 0 });
+
+  // Resume parsing
   const [resumeText, setResumeText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
-  
-  // ATS states
+  const [parseResult, setParseResult] = useState<any>(null);
+
+  // ATS analyzer
   const [atsJd, setAtsJd] = useState('');
   const [atsReport, setAtsReport] = useState<any>(null);
   const [isAtsLoading, setIsAtsLoading] = useState(false);
 
-  // Jobs states
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [isJobsLoading, setIsJobsLoading] = useState(true);
-  const [matchReports, setMatchReports] = useState<Record<string, any>>({});
-  const [matchingJobId, setMatchingJobId] = useState<string | null>(null);
-
-  // Automation states
+  // Automation modal
   const [activeApplicationId, setActiveApplicationId] = useState<string | null>(null);
   const [automationLogs, setAutomationLogs] = useState<any>(null);
   const [isApplying, setIsApplying] = useState(false);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [isJobsLoading, setIsJobsLoading] = useState(false);
 
   useEffect(() => {
-    // Load session
-    const getSession = async () => {
-      // Try Supabase Auth first
+    const init = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session) {
-        setUser(session.user);
-        loadProfileFromDb(session.user.id);
-      } else {
-        // Fallback to Developer Quick Login
-        const mockSessionStr = typeof window !== 'undefined' ? localStorage.getItem('sb-mock-session') : null;
-        if (mockSessionStr) {
-          const session = JSON.parse(mockSessionStr);
-          setUser(session.user);
-          loadMockProfile();
-        } else {
-          router.push('/auth');
-        }
-      }
-    };
+      let u = session?.user;
+      const mock = typeof window !== 'undefined' ? localStorage.getItem('sb-mock-session') : null;
+      if (!u && mock) { u = JSON.parse(mock).user; setIsMock(true); }
+      if (!u) { router.push('/auth'); return; }
+      setUser(u);
 
-    getSession();
+      // Load profile
+      const cached = typeof window !== 'undefined' ? localStorage.getItem(`profile-${u.id}`) : null;
+      if (cached) setProfile(JSON.parse(cached));
+      fetch(`/api/profile?userId=${u.id}`).then(r => r.json()).then(d => { if (d.profile) setProfile(d.profile); }).catch(() => {});
+
+      // Load stats
+      loadStats(u.id);
+    };
+    init();
     fetchJobs();
   }, [router]);
 
-  // Log Poller
+  // Log poller
   useEffect(() => {
-    let intervalId: any;
-
-    if (activeApplicationId && showLogModal) {
-      const fetchLogs = async () => {
-        try {
-          const res = await fetch(`/api/automation/logs?applicationId=${activeApplicationId}`);
-          const data = await res.json();
-          setAutomationLogs(data);
-          
-          if (data.status === 'success' || data.status === 'failed') {
-            setIsApplying(false);
-            clearInterval(intervalId);
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      };
-
-      fetchLogs(); // initial call
-      intervalId = setInterval(fetchLogs, 1500);
-    }
-
-    return () => clearInterval(intervalId);
+    if (!activeApplicationId || !showLogModal) return;
+    const id = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/automation/logs?applicationId=${activeApplicationId}`);
+        const d = await r.json();
+        setAutomationLogs(d);
+        if (d.status === 'success' || d.status === 'failed') { setIsApplying(false); clearInterval(id); }
+      } catch {}
+    }, 1500);
+    return () => clearInterval(id);
   }, [activeApplicationId, showLogModal]);
 
-  const loadProfileFromDb = async (userId: string) => {
+  const loadStats = async (userId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-        
-      if (data) {
-        setProfile(data);
-      }
-    } catch (e) {}
-  };
+      const [appRes, resumeRes] = await Promise.all([
+        fetch(`/api/analytics?userId=${userId}`),
+        fetch(`/api/resume?userId=${userId}`),
+      ]);
+      const appData   = await appRes.json().catch(() => ({}));
+      const resumeData = await resumeRes.json().catch(() => ({}));
 
-  const loadMockProfile = () => {
-    setProfile({
-      full_name: 'Jane Developer',
-      headline: 'Senior Full Stack Engineer',
-      bio: 'Dynamic developer with expertise in Next.js, Node.js, and Postgres databases.',
-      skills: ['JavaScript', 'React', 'Node.js', 'Next.js', 'PostgreSQL', 'TypeScript', 'Git'],
-      experience: [
-        { company: 'DevTech Labs', role: 'Software Engineer', dates: '2023 - Present' }
-      ],
-      education: [
-        { school: 'State University', degree: 'B.S. Computer Science', dates: '2019-2023' }
-      ]
-    });
+      const queued = typeof window !== 'undefined'
+        ? (JSON.parse(localStorage.getItem(`queued-jobs-${userId}`) || '[]') as string[]).length
+        : 0;
+
+      setStats({
+        total:        appData.total || 0,
+        interviewing: appData.interviewing || 0,
+        offers:       appData.offers || 0,
+        atsAvg:       appData.avgAtsScore || 0,
+        queued,
+        resumes:      (resumeData.resumes || []).length,
+      });
+    } catch {}
   };
 
   const fetchJobs = async () => {
+    setIsJobsLoading(true);
     try {
-      setIsJobsLoading(true);
-      const res = await fetch('/api/jobs');
-      const data = await res.json();
-      setJobs(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsJobsLoading(false);
-    }
+      const r = await fetch('/api/jobs');
+      setJobs(await r.json());
+    } catch {} finally { setIsJobsLoading(false); }
   };
 
   const handleParseResume = async () => {
     if (!resumeText.trim()) return;
     setIsParsing(true);
+    setParseResult(null);
     try {
-      const res = await fetch('/api/parser', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: resumeText })
+      const r = await fetch('/api/parser', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: resumeText }),
       });
-      const data = await res.json();
-      if (!data.error) {
-        setProfile(data);
-        // Sync profile optionally to database
-        const isMockMode = typeof window !== 'undefined' && localStorage.getItem('sb-mock-session');
-        if (user && !isMockMode) {
-          await supabase.from('profiles').upsert({
-            id: user.id,
-            email: user.email,
-            full_name: data.full_name,
-            headline: data.headline,
-            bio: data.bio,
-            skills: data.skills,
-            experience: data.experience,
-            education: data.education,
-            updated_at: new Date().toISOString()
-          });
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsParsing(false);
-    }
+      const d = await r.json();
+      if (!d.error) { setParseResult(d); setProfile(d); }
+    } catch {} finally { setIsParsing(false); }
   };
 
-  const handleCalculateAts = async () => {
+  const handleAts = async () => {
     if (!atsJd.trim()) return;
     setIsAtsLoading(true);
+    setAtsReport(null);
     try {
-      const res = await fetch('/api/ats', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          resumeText: resumeText || JSON.stringify(profile), 
-          jobDescription: atsJd 
-        })
+      const r = await fetch('/api/ats', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeText: resumeText || JSON.stringify(profile), jobDescription: atsJd }),
       });
-      const data = await res.json();
-      setAtsReport(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsAtsLoading(false);
-    }
+      setAtsReport(await r.json());
+    } catch {} finally { setIsAtsLoading(false); }
   };
 
-  const handleMatchJob = async (job: any) => {
-    setMatchingJobId(job.id);
-    try {
-      const res = await fetch('/api/matcher', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile, job })
-      });
-      const data = await res.json();
-      setMatchReports(prev => ({ ...prev, [job.id]: data }));
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setMatchingJobId(null);
-    }
-  };
-
-  const handleTriggerApply = async (jobId: string) => {
+  const handleApply = async (jobId: string) => {
+    if (!user) return;
     setIsApplying(true);
     setShowLogModal(true);
-    setAutomationLogs({ steps: [], current_step: 'Starting client handshake...', status: 'running' });
-    
+    setAutomationLogs({ steps: [], current_step: 'Initializing…', status: 'running' });
     try {
-      const res = await fetch('/api/automation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: user.id,
-          jobId,
-          resumeId: null
-        })
+      const r = await fetch('/api/automation', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id, jobId }),
       });
-      const data = await res.json();
-      if (data.applicationId) {
-        setActiveApplicationId(data.applicationId);
-      }
-    } catch (e) {
-      console.error(e);
-      setIsApplying(false);
-    }
+      const d = await r.json();
+      if (d.applicationId) setActiveApplicationId(d.applicationId);
+    } catch { setIsApplying(false); }
   };
 
+  const greeting = () => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  };
+
+  const displayName = profile?.full_name || user?.email?.split('@')[0] || 'there';
+
   return (
-    <div style={{ padding: '3rem 0' }} className="animate-slide-up">
-      <div className="container">
-        
-        {/* Welcome Banner */}
-        <div className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3rem', borderLeft: '4px solid var(--color-primary)' }}>
+    <div style={{ padding: '2rem', minHeight: '100vh' }}>
+      <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+
+        {/* Welcome */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>
-              Welcome back, <span className="grad-text">{profile.full_name || user?.email?.split('@')[0]}</span>!
-            </h2>
-            <p style={{ fontSize: '0.95rem' }}>Maximize your ATS matches and track your automations in one place.</p>
+            <h1 style={{ fontSize: '1.85rem', fontWeight: 800, color: 'var(--text-main)', marginBottom: '0.2rem' }}>
+              {greeting()}, <span className="grad-text">{displayName}</span>
+            </h1>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>Your job-search command centre. Queue jobs, auto-apply, track progress.</p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <span className="badge badge-info" style={{ gap: '0.25rem', alignItems: 'center', display: 'flex' }}>
-              <User size={12} />
-              <span>{user?.email}</span>
-            </span>
-            {typeof window !== 'undefined' && localStorage.getItem('sb-mock-session') && (
-              <span className="badge badge-warning" style={{ gap: '0.25rem', alignItems: 'center', display: 'flex' }}>
-                <ShieldAlert size={12} />
-                <span>Mock Mode</span>
+            {isMock && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.3rem 0.8rem', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', borderRadius: '999px', fontSize: '0.78rem', fontWeight: 700, border: '1px solid rgba(245,158,11,0.3)' }}>
+                <ShieldAlert size={12} /> Mock Mode
               </span>
             )}
+            <Link href="/jobs" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.2rem', background: 'var(--grad-primary)', color: 'white', borderRadius: 'var(--radius-sm)', fontWeight: 700, fontSize: '0.88rem', textDecoration: 'none' }}>
+              <Search size={14} /> Find Jobs <ArrowRight size={13} />
+            </Link>
           </div>
         </div>
 
-        {/* Dashboard Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginBottom: '3rem' }}>
-          
-          {/* Resume Parsing / Profile View */}
-          <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
-                <FileText size={20} color="var(--color-primary)" />
-                <span>Resume & Candidate Profile</span>
+        {/* Stats row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.85rem', marginBottom: '2rem' }}>
+          {[
+            { label: 'Applications', value: stats.total,        icon: <Briefcase size={16} />, color: '#7c3aed' },
+            { label: 'Interviewing', value: stats.interviewing, icon: <User size={16} />,      color: '#3b82f6' },
+            { label: 'Offers',       value: stats.offers,       icon: <CheckCircle2 size={16} />, color: '#10b981' },
+            { label: 'Avg ATS',      value: stats.atsAvg ? `${stats.atsAvg}%` : '—', icon: <Target size={16} />, color: '#f59e0b' },
+            { label: 'In Queue',     value: stats.queued,       icon: <Zap size={16} />,       color: '#ec4899' },
+            { label: 'Resumes',      value: stats.resumes,      icon: <FileText size={16} />,  color: '#6366f1' },
+          ].map(s => (
+            <div key={s.label} style={{ ...cardStyle, textAlign: 'center', padding: '1rem' }}>
+              <div style={{ color: s.color, display: 'flex', justifyContent: 'center', marginBottom: '0.4rem' }}>{s.icon}</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)', lineHeight: 1 }}>{s.value}</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.25rem', fontWeight: 500 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Quick actions */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '0.75rem', marginBottom: '2.5rem' }}>
+          {quickActions.map(a => (
+            <Link key={a.href} href={a.href} style={{ ...cardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', textAlign: 'center', padding: '1rem 0.75rem', transition: 'box-shadow 0.15s', cursor: 'pointer' }}
+              onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 0 0 2px var(--color-primary)')}
+              onMouseLeave={e => (e.currentTarget.style.boxShadow = 'var(--shadow-sm)')}>
+              <div style={{ color: 'var(--color-primary)' }}>{a.icon}</div>
+              <div style={{ fontWeight: 700, fontSize: '0.82rem', color: 'var(--text-main)' }}>{a.label}</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: 1.3 }}>{a.desc}</div>
+            </Link>
+          ))}
+        </div>
+
+        {/* Main tools grid */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
+
+          {/* Resume Parser */}
+          <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.05rem', fontWeight: 700 }}>
+                <Cpu size={18} color="var(--color-primary)" /> Resume Parser
               </h3>
-              {isParsing && <Loader size={16} className="animate-spin" style={{ color: 'var(--color-primary)' }} />}
+              {isParsing && <Loader size={15} style={{ animation: 'spin 1s linear infinite', color: 'var(--color-primary)' }} />}
             </div>
+            <textarea rows={7} placeholder="Paste raw resume text here to extract structured data with Gemini AI…"
+              style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', fontSize: '0.83rem', resize: 'vertical', color: 'var(--text-main)', background: 'white', boxSizing: 'border-box' }}
+              value={resumeText} onChange={e => setResumeText(e.target.value)} />
+            <button onClick={handleParseResume} disabled={isParsing || !resumeText.trim()}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.1rem', background: 'var(--grad-primary)', border: 'none', color: 'white', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontWeight: 600, fontSize: '0.84rem', alignSelf: 'flex-start', opacity: (isParsing || !resumeText.trim()) ? 0.6 : 1 }}>
+              <Cpu size={14} /> {isParsing ? 'Parsing…' : 'Parse with Gemini AI'}
+            </button>
+            {parseResult && (
+              <div style={{ paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>Extracted:</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.83rem' }}>
+                  {parseResult.full_name && <div><strong>Name:</strong> {parseResult.full_name}</div>}
+                  {parseResult.headline  && <div><strong>Headline:</strong> {parseResult.headline}</div>}
+                  {parseResult.skills?.length > 0 && (
+                    <div>
+                      <strong>Skills:</strong>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.25rem' }}>
+                        {(Array.isArray(parseResult.skills) && typeof parseResult.skills[0] === 'object'
+                          ? parseResult.skills.flatMap((c: any) => c.items || [])
+                          : parseResult.skills
+                        ).slice(0, 12).map((sk: string, i: number) => (
+                          <span key={i} style={{ padding: '0.1rem 0.45rem', background: 'rgba(124,58,237,0.08)', color: 'var(--color-primary)', borderRadius: '999px', fontSize: '0.74rem', border: '1px solid rgba(124,58,237,0.2)' }}>{sk}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
-            <div className="form-group">
-              <label className="form-label">Paste Resume Text to Parse</label>
-              <textarea 
-                rows={6}
-                placeholder="Paste your raw resume text here to analyze skills & structure..." 
-                className="form-textarea"
-                value={resumeText}
-                onChange={(e) => setResumeText(e.target.value)}
-              />
+          {/* ATS Scorer */}
+          <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.05rem', fontWeight: 700 }}>
+                <Sparkles size={18} color="var(--color-accent)" /> ATS Scorer
+              </h3>
+              {isAtsLoading && <Loader size={15} style={{ animation: 'spin 1s linear infinite', color: 'var(--color-accent)' }} />}
             </div>
-
-            <button 
-              onClick={handleParseResume}
-              disabled={isParsing || !resumeText.trim()}
-              className="btn btn-primary"
-              style={{ alignSelf: 'flex-start' }}
-            >
-              <Cpu size={16} />
-              <span>Parse with Gemini AI</span>
+            <textarea rows={7} placeholder="Paste the job description to calculate your ATS match score…"
+              style={{ width: '100%', padding: '0.65rem 0.85rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', fontFamily: 'inherit', fontSize: '0.83rem', resize: 'vertical', color: 'var(--text-main)', background: 'white', boxSizing: 'border-box' }}
+              value={atsJd} onChange={e => setAtsJd(e.target.value)} />
+            <button onClick={handleAts} disabled={isAtsLoading || !atsJd.trim()}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1.1rem', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', color: 'white', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontWeight: 600, fontSize: '0.84rem', alignSelf: 'flex-start', opacity: (isAtsLoading || !atsJd.trim()) ? 0.6 : 1 }}>
+              <CheckCircle2 size={14} /> {isAtsLoading ? 'Analyzing…' : 'Calculate ATS Score'}
             </button>
 
-            {/* Profile Detail View */}
-            <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
-              <h4 style={{ fontSize: '1rem', marginBottom: '0.75rem', color: 'var(--text-main)' }}>Current Parsed Profile Details</h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.9rem' }}>
-                <div><strong>Name:</strong> {profile.full_name}</div>
-                <div><strong>Headline:</strong> {profile.headline}</div>
-                <div><strong>Bio:</strong> <span style={{ color: 'var(--text-muted)' }}>{profile.bio}</span></div>
-                <div>
-                  <strong>Skills extracted:</strong>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
-                    {(profile.skills || []).map((skill: string, idx: number) => (
-                      <span key={idx} className="badge badge-info" style={{ background: 'rgba(0, 0, 0, 0.05)', color: 'var(--text-main)', border: '1px solid var(--border-color)' }}>
-                        {skill}
-                      </span>
+            {atsReport && !isAtsLoading && (
+              <div style={{ paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
+                  <div style={{ width: 54, height: 54, borderRadius: '50%', background: atsReport.score >= 70 ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)', border: `2px solid ${atsReport.score >= 70 ? '#10b981' : '#f59e0b'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1.1rem', color: atsReport.score >= 70 ? '#10b981' : '#f59e0b', flexShrink: 0 }}>
+                    {atsReport.score}%
+                  </div>
+                  <div style={{ fontSize: '0.83rem', color: 'var(--text-muted)' }}>
+                    {atsReport.score >= 70 ? '✅ Strong match' : atsReport.score >= 50 ? '⚠️ Moderate match' : '❌ Low match — tailoring needed'}
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  <strong style={{ color: 'var(--text-main)' }}>Matched:</strong>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem', marginBottom: '0.4rem' }}>
+                    {(atsReport.matchedKeywords || []).slice(0, 10).map((kw: string, i: number) => (
+                      <span key={i} style={{ padding: '0.1rem 0.4rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', borderRadius: '999px', fontSize: '0.72rem' }}>{kw}</span>
+                    ))}
+                  </div>
+                  <strong style={{ color: 'var(--text-main)' }}>Missing:</strong>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: '0.25rem' }}>
+                    {(atsReport.missingKeywords || []).slice(0, 8).map((kw: string, i: number) => (
+                      <span key={i} style={{ padding: '0.1rem 0.4rem', background: 'rgba(239,68,68,0.07)', color: '#ef4444', borderRadius: '999px', fontSize: '0.72rem' }}>{kw}</span>
                     ))}
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* ATS Analyzer */}
-          <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '1.25rem' }}>
-              <Sparkles size={20} color="var(--color-accent)" />
-              <span>ATS Score Calculator</span>
-            </h3>
-
-            <div className="form-group">
-              <label className="form-label">Job Description</label>
-              <textarea 
-                rows={6}
-                placeholder="Paste the job description of your target posting here..." 
-                className="form-textarea"
-                value={atsJd}
-                onChange={(e) => setAtsJd(e.target.value)}
-              />
-            </div>
-
-            <button 
-              onClick={handleCalculateAts}
-              disabled={isAtsLoading || !atsJd.trim()}
-              className="btn btn-accent"
-              style={{ alignSelf: 'flex-start' }}
-            >
-              <CheckCircle2 size={16} />
-              <span>Calculate ATS Score</span>
-            </button>
-
-            {/* ATS Result Report */}
-            {isAtsLoading && (
-              <div className="flex-center" style={{ padding: '2rem 0', flexDirection: 'column', gap: '0.5rem' }}>
-                <Loader size={24} style={{ animation: 'spin 1.5s linear infinite', color: 'var(--color-accent)' }} />
-                <p style={{ fontSize: '0.9rem' }}>Gemini is scanning compliance guidelines...</p>
-              </div>
-            )}
-
-            {atsReport && !isAtsLoading && (
-              <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', marginBottom: '1rem' }}>
-                  <div style={{ 
-                    width: '60px', 
-                    height: '60px', 
-                    borderRadius: '50%', 
-                    background: atsReport.score >= 70 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)', 
-                    border: `2px solid ${atsReport.score >= 70 ? 'var(--color-accent)' : 'var(--color-warning)'}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontWeight: 800,
-                    fontSize: '1.25rem',
-                    color: atsReport.score >= 70 ? 'var(--color-accent)' : 'var(--color-warning)'
-                  }}>
-                    {atsReport.score}%
-                  </div>
-                  <div>
-                    <h4 style={{ fontSize: '1rem', color: 'var(--text-main)' }}>ATS Compliance Score</h4>
-                    <p style={{ fontSize: '0.85rem' }}>Based on keyword similarity & technical alignment</p>
-                  </div>
-                </div>
-
-                <div style={{ fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  <div>
-                    <strong>Matched Keywords:</strong>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.25rem' }}>
-                      {atsReport.matchedKeywords.map((kw: string, i: number) => (
-                        <span key={i} className="badge badge-success" style={{ padding: '0.15rem 0.4rem', fontSize: '0.7rem' }}>{kw}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <strong>Missing / Critical Gaps:</strong>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.25rem' }}>
-                      {atsReport.missingKeywords.map((kw: string, i: number) => (
-                        <span key={i} className="badge badge-danger" style={{ padding: '0.15rem 0.4rem', fontSize: '0.7rem' }}>{kw}</span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <strong>Optimizations Needed:</strong>
-                    <ul style={{ listStyleType: 'disc', paddingLeft: '1.2rem', marginTop: '0.25rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                      {atsReport.suggestions.map((sug: string, i: number) => (
-                        <li key={i}>{sug}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </div>
             )}
           </div>
-
         </div>
 
-        {/* Job Listings / Match & Automation */}
-        <div className="glass-panel" style={{ marginBottom: '3rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <h3 style={{ fontSize: '1.25rem' }}>Available Target Job Postings</h3>
-            <button onClick={fetchJobs} className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', gap: '0.25rem' }}>
-              <RefreshCw size={12} />
-              <span>Refresh</span>
-            </button>
+        {/* Recent jobs preview */}
+        <div className="glass-panel" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+            <h3 style={{ fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Briefcase size={17} color="var(--color-primary)" /> Latest Jobs
+            </h3>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button onClick={fetchJobs} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.75rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.78rem' }}>
+                <RefreshCw size={12} />
+              </button>
+              <Link href="/jobs" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.85rem', borderRadius: 'var(--radius-sm)', background: 'var(--grad-primary)', border: 'none', color: 'white', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
+                View All <ArrowRight size={12} />
+              </Link>
+            </div>
           </div>
 
           {isJobsLoading ? (
-            <div className="flex-center" style={{ padding: '4rem 0' }}>
-              <Loader size={32} style={{ animation: 'spin 1.5s linear infinite', color: 'var(--color-primary)' }} />
+            <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+              <Loader size={22} style={{ animation: 'spin 1s linear infinite', display: 'block', margin: '0 auto 0.5rem' }} />
+              Loading jobs…
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {jobs.map((job) => {
-                const matchReport = matchReports[job.id];
-                const isMatching = matchingJobId === job.id;
-
-                return (
-                  <div key={job.id} style={{ 
-                    border: '1px solid var(--border-color)', 
-                    borderRadius: 'var(--radius-sm)', 
-                    padding: '1.25rem',
-                    background: 'rgba(0, 0, 0, 0.15)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '1rem'
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <h4 style={{ fontSize: '1.1rem', color: 'var(--text-main)' }}>{job.title}</h4>
-                        <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 500 }}>
-                          {job.company} â€” <span style={{ fontSize: '0.85rem' }}>{job.location || 'Remote'}</span>
-                        </p>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                        <span className="badge badge-info">{job.source}</span>
-                        {job.salary_range && <span className="badge badge-success" style={{ background: 'rgba(16, 185, 129, 0.05)' }}>{job.salary_range}</span>}
-                      </div>
-                    </div>
-
-                    <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)' }}>{job.description}</p>
-
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                      {(job.requirements || []).slice(0, 3).map((req: string, i: number) => (
-                        <span key={i} style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', background: 'rgba(0, 0, 0, 0.04)', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
-                          {req}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div style={{ 
-                      display: 'flex', 
-                      justifyContent: 'space-between', 
-                      alignItems: 'center', 
-                      borderTop: '1px solid var(--border-color)', 
-                      paddingTop: '1rem',
-                      marginTop: '0.5rem'
-                    }}>
-                      {/* Compatibility rating */}
-                      <div>
-                        {matchReport ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <span className={`badge ${
-                              matchReport.rating === 'Excellent' ? 'badge-success' : 
-                              matchReport.rating === 'Good' ? 'badge-info' : 
-                              matchReport.rating === 'Fair' ? 'badge-warning' : 'badge-danger'
-                            }`} style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }}>
-                              Match: {matchReport.rating} ({matchReport.percentage}%)
-                            </span>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                              Advice: {matchReport.tailoringAdvice}
-                            </span>
-                          </div>
-                        ) : (
-                          <button 
-                            onClick={() => handleMatchJob(job)} 
-                            disabled={isMatching}
-                            className="btn btn-secondary" 
-                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
-                          >
-                            {isMatching ? 'Matching...' : 'Check Matching Compatibility'}
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Auto apply triggers */}
-                      <button 
-                        onClick={() => handleTriggerApply(job.id)}
-                        className="btn btn-primary"
-                        style={{ padding: '0.4rem 1rem', fontSize: '0.85rem' }}
-                      >
-                        <Play size={12} fill="white" />
-                        <span>Apply on Autopilot</span>
-                      </button>
-                    </div>
-
-                    {/* Detailed Match Report lists */}
-                    {matchReport && (
-                      <div style={{ 
-                        background: 'rgba(0,0,0,0.02)', 
-                        padding: '0.75rem 1rem', 
-                        borderRadius: 'var(--radius-sm)', 
-                        fontSize: '0.82rem', 
-                        border: '1px dashed var(--border-color)',
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 1fr',
-                        gap: '1.5rem'
-                      }}>
-                        <div>
-                          <strong style={{ color: 'var(--color-accent)' }}>Pros:</strong>
-                          <ul style={{ paddingLeft: '1.2rem', marginTop: '0.2rem', color: 'var(--text-muted)' }}>
-                            {matchReport.pros.map((p: string, i: number) => <li key={i}>{p}</li>)}
-                          </ul>
-                        </div>
-                        <div>
-                          <strong style={{ color: 'var(--color-danger)' }}>Gaps to Address:</strong>
-                          <ul style={{ paddingLeft: '1.2rem', marginTop: '0.2rem', color: 'var(--text-muted)' }}>
-                            {matchReport.cons.map((c: string, i: number) => <li key={i}>{c}</li>)}
-                          </ul>
-                        </div>
-                      </div>
-                    )}
-
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+              {jobs.slice(0, 4).map(job => (
+                <div key={job.id} style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', background: 'rgba(0,0,0,0.015)' }}>
+                  <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)', marginBottom: '0.2rem' }}>{job.title}</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--color-primary)', marginBottom: '0.3rem' }}>{job.company}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>{job.location} · {job.salary_range || 'Salary N/A'}</div>
+                  <div style={{ display: 'flex', gap: '0.4rem' }}>
+                    <button onClick={() => handleApply(job.id)} disabled={isApplying}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.7rem', borderRadius: 'var(--radius-sm)', background: 'var(--grad-primary)', border: 'none', color: 'white', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}>
+                      <Play size={11} fill="white" /> Apply
+                    </button>
+                    <Link href="/jobs" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.3rem 0.7rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.75rem' }}>
+                      More
+                    </Link>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
         </div>
 
-        {/* Futuristic Terminal Logger Modal */}
+        {/* Automation log modal */}
         {showLogModal && (
-          <div style={{ 
-            position: 'fixed', 
-            top: 0, 
-            left: 0, 
-            right: 0, 
-            bottom: 0, 
-            background: 'rgba(0, 0, 0, 0.75)', 
-            backdropFilter: 'blur(4px)',
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '1.5rem'
-          }}>
-            <div className="glass-panel" style={{ 
-              width: '100%', 
-              maxWidth: '650px', 
-              background: '#040508', 
-              border: '1px solid rgba(124, 58, 237, 0.4)',
-              boxShadow: '0 0 30px rgba(124, 58, 237, 0.25)',
-              padding: 0,
-              overflow: 'hidden'
-            }}>
-              {/* Header */}
-              <div style={{ 
-                background: 'rgba(0,0,0,0.03)', 
-                borderBottom: '1px solid var(--border-color)', 
-                padding: '0.75rem 1.25rem',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.9rem' }}>
-                  <Terminal size={16} color="var(--color-primary)" />
-                  <span style={{ fontWeight: 600, color: 'var(--text-main)', fontFamily: 'monospace' }}>autoapply-agent-runner v1.0</span>
-                </div>
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1.5rem' }}>
+            <div style={{ width: '100%', maxWidth: '620px', background: '#040508', border: '1px solid rgba(124,58,237,0.4)', boxShadow: '0 0 40px rgba(124,58,237,0.2)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+              <div style={{ background: '#111', borderBottom: '1px solid #222', padding: '0.75rem 1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, color: '#a78bfa', fontFamily: 'monospace', fontSize: '0.88rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Terminal size={14} /> auto-apply-runner v1.0
+                </span>
                 <div style={{ display: 'flex', gap: '0.4rem' }}>
-                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444' }} />
-                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b' }} />
-                  <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981' }} />
+                  {['#ef4444','#f59e0b','#10b981'].map(c => <div key={c} style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />)}
                 </div>
               </div>
-
-              {/* Console log box */}
-              <div style={{ 
-                padding: '1.5rem', 
-                height: '320px', 
-                overflowY: 'auto', 
-                fontFamily: 'monospace', 
-                fontSize: '0.85rem',
-                color: '#22c55e',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '0.5rem'
-              }}>
-                <div>[SYSTEM] Initializing Agent thread...</div>
-                
-                {automationLogs?.steps?.map((step: any, idx: number) => (
-                  <div key={idx} style={{ 
-                    borderLeft: `2px solid ${step.status === 'success' ? '#22c55e' : '#ef4444'}`,
-                    paddingLeft: '0.5rem',
-                    color: step.status === 'success' ? '#a78bfa' : '#ef4444'
-                  }}>
-                    <span style={{ color: '#6b7280' }}>[{step.timestamp?.split('T')[1]?.slice(0,8)}]</span>{' '}
-                    <strong>{step.step}:</strong> {step.details}
+              <div style={{ padding: '1.25rem', height: 300, overflowY: 'auto', fontFamily: 'monospace', fontSize: '0.82rem', color: '#22c55e', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <div>[SYSTEM] Initializing agent thread…</div>
+                {(automationLogs?.steps || []).map((step: any, i: number) => (
+                  <div key={i} style={{ borderLeft: `2px solid ${step.status === 'success' ? '#22c55e' : '#ef4444'}`, paddingLeft: 8, color: step.status === 'success' ? '#a78bfa' : '#ef4444' }}>
+                    <span style={{ color: '#6b7280' }}>[{(step.timestamp || '').split('T')[1]?.slice(0, 8)}]</span> <strong>{step.step}:</strong> {step.details}
                   </div>
                 ))}
-
                 {isApplying && (
-                  <div style={{ color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span>&gt; Running: {automationLogs?.current_step || 'Awaiting browser session...'}</span>
-                    <Loader size={12} className="animate-spin" />
+                  <div style={{ color: '#9ca3af', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                    {automationLogs?.current_step || 'Awaiting browser session…'}
                   </div>
                 )}
-
                 {automationLogs?.status === 'success' && (
-                  <div style={{ 
-                    color: '#10b981', 
-                    fontWeight: 'bold', 
-                    marginTop: '1rem',
-                    border: '1px solid #10b981',
-                    padding: '0.5rem',
-                    borderRadius: '4px',
-                    background: 'rgba(16,185,129,0.05)',
-                    textAlign: 'center'
-                  }}>
-                    ðŸŽ‰ APPLICATION SUBMITTED SUCCESSFULLY!
+                  <div style={{ color: '#10b981', fontWeight: 700, marginTop: '0.5rem', border: '1px solid #10b981', padding: '0.5rem', borderRadius: 4, textAlign: 'center' }}>
+                    🎉 APPLICATION SUBMITTED!
                   </div>
                 )}
               </div>
-
-              {/* Actions */}
-              <div style={{ 
-                padding: '1rem 1.5rem', 
-                borderTop: '1px solid var(--border-color)', 
-                background: 'rgba(0,0,0,0.3)',
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: '0.5rem'
-              }}>
-                <button 
-                  onClick={() => router.push('/tracker')}
-                  disabled={isApplying}
-                  className="btn btn-accent"
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                >
-                  Go to Tracker
-                </button>
-                <button 
-                  onClick={() => {
-                    setShowLogModal(false);
-                    setActiveApplicationId(null);
-                    setAutomationLogs(null);
-                  }}
-                  disabled={isApplying}
-                  className="btn btn-secondary"
-                  style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
-                >
-                  Close Terminal
+              <div style={{ background: '#111', borderTop: '1px solid #222', padding: '0.85rem 1.25rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                <Link href="/tracker" style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.45rem 1rem', background: 'rgba(16,185,129,0.15)', color: '#10b981', borderRadius: 'var(--radius-sm)', fontWeight: 600, fontSize: '0.82rem', textDecoration: 'none', border: '1px solid rgba(16,185,129,0.3)' }}>
+                  <Calendar size={13} /> Tracker
+                </Link>
+                <button disabled={isApplying} onClick={() => { setShowLogModal(false); setActiveApplicationId(null); setAutomationLogs(null); }}
+                  style={{ padding: '0.45rem 1rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#aaa', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.82rem' }}>
+                  Close
                 </button>
               </div>
-
             </div>
           </div>
         )}
 
       </div>
-      
-      {/* Keyframe spinners style injection */}
-      <style jsx global>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-      `}</style>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
-
-
