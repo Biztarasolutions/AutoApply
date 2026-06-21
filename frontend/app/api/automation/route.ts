@@ -1,99 +1,71 @@
 import { NextResponse } from 'next/server';
 import { Client } from 'pg';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
-// Local in-memory store for mock applications when database is offline
+// In-memory log store used when DATABASE_URL is absent
 const mockApplicationsDb: Record<string, any> = {};
 
 export async function POST(request: Request) {
   try {
-    const { userId, jobId, resumeId } = await request.json();
+    const body = await request.json();
+    const { userId, jobId, jobUrl, jobTitle, company, profile: clientProfile, resumeId } = body;
 
     if (!userId || !jobId) {
       return NextResponse.json({ error: 'userId and jobId are required' }, { status: 400 });
     }
 
-    const connectionString = process.env.DATABASE_URL;
-    let applicationId = crypto.randomUUID();
+    const applicationId = crypto.randomUUID();
 
-    if (!connectionString) {
-      console.log('⚠️ DATABASE_URL not configured. Simulating application creation in memory.');
-      mockApplicationsDb[applicationId] = {
-        id: applicationId,
-        user_id: userId,
-        job_id: jobId,
-        resume_id: resumeId || null,
-        status: 'pending',
-        created_at: new Date().toISOString()
+    // Initialise in-memory entry immediately so the log poller has something to read
+    mockApplicationsDb[applicationId] = {
+      id: applicationId,
+      user_id: userId,
+      job_id: jobId,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      logs: { steps: [], current_step: 'Starting…', status: 'running' },
+    };
+
+    // Fetch profile from DB/cache — prefer what the client sent, fall back to API
+    const profile = clientProfile || {};
+
+    // Locate the user's most recent resume PDF if available
+    let resumePath: string | null = null;
+    try {
+      const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+      if (fs.existsSync(uploadsDir)) {
+        const files = fs.readdirSync(uploadsDir)
+          .filter(f => f.endsWith('.pdf') && f.includes(userId.slice(0, 8)))
+          .map(f => ({ name: f, mtime: fs.statSync(path.join(uploadsDir, f)).mtimeMs }))
+          .sort((a, b) => b.mtime - a.mtime);
+        if (files.length > 0) resumePath = path.join(uploadsDir, files[0].name);
+      }
+    } catch {}
+
+    // Kick off real Playwright runner in background
+    const { runAutoApply } = await import('@/lib/automation/runner');
+    runAutoApply(applicationId, {
+      jobUrl,
+      profile: { ...profile, email: profile.email || userId },
+      resumePath,
+      mockStore: mockApplicationsDb,
+    }).catch((err: any) => {
+      console.error('❌ Automation runner error:', err.message);
+      mockApplicationsDb[applicationId].logs = {
+        steps: [{ step: 'Error', status: 'failed', details: err.message, timestamp: new Date().toISOString() }],
+        current_step: 'Error',
+        status: 'failed',
+        error_message: err.message,
       };
-      
-      // Start background simulation
-      triggerMockAutomation(applicationId);
-      
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Mock application automation started in memory.',
-        applicationId 
-      });
-    }
-
-    const client = new Client({
-      connectionString,
-      ssl: connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
-        ? false
-        : { rejectUnauthorized: false }
     });
 
-    await client.connect();
-
-    try {
-      // Check if application already exists
-      const existingRes = await client.query(
-        'SELECT id FROM public.applications WHERE user_id = $1 AND job_id = $2',
-        [userId, jobId]
-      );
-
-      if (existingRes.rows.length > 0) {
-        applicationId = existingRes.rows[0].id;
-        // Reset status to pending
-        await client.query(
-          "UPDATE public.applications SET status = 'pending', updated_at = NOW() WHERE id = $1",
-          [applicationId]
-        );
-      } else {
-        // Create new application
-        const insertRes = await client.query(
-          `INSERT INTO public.applications (id, user_id, job_id, resume_id, status)
-           VALUES ($1, $2, $3, $4, 'pending')
-           RETURNING id`,
-          [applicationId, userId, jobId, resumeId || null]
-        );
-        applicationId = insertRes.rows[0].id;
-      }
-
-      // Initialize empty automation log row
-      await client.query(
-        `INSERT INTO public.automation_logs (application_id, steps, current_step, status)
-         VALUES ($1, '[]'::jsonb, 'Starting...', 'running')
-         ON CONFLICT (application_id) DO UPDATE
-         SET steps = '[]'::jsonb, current_step = 'Starting...', status = 'running', error_message = NULL`,
-        [applicationId]
-      );
-
-      const { runAutoApply } = await import('@/lib/automation/runner');
-
-      runAutoApply(applicationId).catch((err: any) => {
-        console.error('❌ Background automation runner failed:', err.message);
-      });
-
-      return NextResponse.json({ 
-        success: true, 
-        message: 'Automation runner triggered successfully.',
-        applicationId 
-      });
-
-    } finally {
-      await client.end();
-    }
+    return NextResponse.json({
+      success: true,
+      message: 'Real automation started.',
+      applicationId,
+    });
 
   } catch (error: any) {
     console.error('❌ Error in automation API:', error);
@@ -101,38 +73,5 @@ export async function POST(request: Request) {
   }
 }
 
-// In-memory simulation runner when database is offline
-async function triggerMockAutomation(applicationId: string) {
-  const steps = [
-    { step: 'Initialization', status: 'success', details: 'Launching headless browser and setting up anti-detection proxies...', timestamp: new Date().toISOString() },
-    { step: 'Navigation', status: 'success', details: 'Navigating to job posting details page...', timestamp: new Date().toISOString() },
-    { step: 'Form Extraction', status: 'success', details: 'Detected application fields: Full Name, Email, Resume Upload, Cover Letter, Custom Questions.', timestamp: new Date().toISOString() },
-    { step: 'Form Filling', status: 'success', details: 'Auto-filling profile variables into standard fields.', timestamp: new Date().toISOString() },
-    { step: 'Resume Uploading', status: 'success', details: 'Retrieving resume file from Supabase storage and attaching to input[type=file].', timestamp: new Date().toISOString() },
-    { step: 'Custom Questions', status: 'success', details: 'Answering custom recruiter screeners with AI-generated responses.', timestamp: new Date().toISOString() },
-    { step: 'Form Submission', status: 'success', details: 'Submitting form data via simulated human clicks.', timestamp: new Date().toISOString() },
-    { step: 'Submission Verifying', status: 'success', details: 'Successfully verified confirmation text and application ID. Application registered.', timestamp: new Date().toISOString() }
-  ];
-
-  const currentSteps: any[] = [];
-  mockApplicationsDb[applicationId].logs = {
-    steps: currentSteps,
-    current_step: 'Starting...',
-    status: 'running'
-  };
-
-  for (let i = 0; i < steps.length; i++) {
-    await new Promise(r => setTimeout(r, 1200));
-    currentSteps.push(steps[i]);
-    mockApplicationsDb[applicationId].logs = {
-      steps: [...currentSteps],
-      current_step: steps[i].step,
-      status: i === steps.length - 1 ? 'success' : 'running'
-    };
-    if (i === steps.length - 1) {
-      mockApplicationsDb[applicationId].status = 'applied';
-    }
-  }
-}
-
+// ── Log endpoint uses the same in-memory store ─────────────────────────────────
 export { mockApplicationsDb };

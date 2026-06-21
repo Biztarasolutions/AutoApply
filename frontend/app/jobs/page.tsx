@@ -100,6 +100,9 @@ export default function JobsPage() {
   const [showLog, setShowLog] = useState(false);
   const [logLines, setLogLines] = useState<string[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
+  const [showAddJob, setShowAddJob] = useState(false);
+  const [addJobForm, setAddJobForm] = useState({ url: '', title: '', company: '', location: '' });
+  const [customJobs, setCustomJobs] = useState<any[]>([]);
 
   useEffect(() => {
     const init = async () => {
@@ -129,6 +132,9 @@ export default function JobsPage() {
       if (savedRaw)   setSavedIds(new Set(JSON.parse(savedRaw)));
       if (queuedRaw)  setQueuedIds(new Set(JSON.parse(queuedRaw)));
       if (appliedRaw) setAppliedIds(new Set(JSON.parse(appliedRaw)));
+
+      const customRaw = localStorage.getItem(`custom-jobs-${u!.id}`);
+      if (customRaw) setCustomJobs(JSON.parse(customRaw));
 
       await fetchJobs();
     };
@@ -225,7 +231,14 @@ export default function JobsPage() {
       const res = await fetch('/api/automation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId: job.id, userId: user.id, jobUrl: job.url, jobTitle: job.title, company: job.company }),
+        body: JSON.stringify({
+          jobId: job.id,
+          userId: user.id,
+          jobUrl: job.apply_url || job.url,
+          jobTitle: job.title,
+          company: job.company,
+          profile,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Automation failed');
@@ -299,8 +312,33 @@ export default function JobsPage() {
   const ts = () => new Date().toLocaleTimeString('en-US', { hour12: false });
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-  const jobsWithScores = filteredJobs.map(j => ({ ...j, _score: matchScore(j, profile) }));
-  const sorted = [...jobsWithScores].sort((a, b) => b._score - a._score);
+  const addCustomJob = () => {
+    if (!addJobForm.url || !addJobForm.title) return;
+    const newJob = {
+      id: `custom-${Date.now()}`,
+      title: addJobForm.title,
+      company: addJobForm.company || 'Unknown',
+      location: addJobForm.location || 'India',
+      description: '',
+      requirements: [],
+      url: addJobForm.url,
+      apply_url: addJobForm.url,
+      source: 'Manual',
+      salary_range: '',
+      tags: ['Custom'],
+      _custom: true,
+    };
+    const updated = [newJob, ...customJobs];
+    setCustomJobs(updated);
+    if (user) localStorage.setItem(`custom-jobs-${user.id}`, JSON.stringify(updated));
+    setAddJobForm({ url: '', title: '', company: '', location: '' });
+    setShowAddJob(false);
+    setMsg({ type: 'success', text: `"${newJob.title}" added. You can now auto-apply!` });
+  };
+
+  const allJobs = [...customJobs, ...filteredJobs];
+  const jobsWithScores = allJobs.map(j => ({ ...j, _score: matchScore(j, profile) }));
+  const sorted = [...jobsWithScores].sort((a, b) => (b._custom ? 1 : 0) - (a._custom ? 1 : 0) || b._score - a._score);
   const queueCount = queuedIds.size;
   const appliedCount = appliedIds.size;
 
@@ -323,6 +361,9 @@ export default function JobsPage() {
                 {isBatchApplying ? `Applying (${batchProgress?.done}/${batchProgress?.total})` : `Auto-Apply Queue (${queueCount})`}
               </button>
             )}
+            <button onClick={() => setShowAddJob(p => !p)} style={{ ...btnPrimary, background: 'none', border: '1px solid var(--color-primary)', color: 'var(--color-primary)' }}>
+              <Plus size={14} /> Add Job URL
+            </button>
             <button onClick={() => setShowLog(p => !p)} style={btnSecondary}><Terminal size={13} /> Logs</button>
             <button onClick={() => setViewMode(p => p === 'list' ? 'grid' : 'list')} style={btnSecondary}>
               {viewMode === 'list' ? <Grid size={13} /> : <List size={13} />}
@@ -330,6 +371,38 @@ export default function JobsPage() {
             <button onClick={() => fetchJobs()} style={btnSecondary}><RefreshCw size={13} /></button>
           </div>
         </div>
+
+        {/* Add Job modal */}
+        {showAddJob && (
+          <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.25rem', borderLeft: '3px solid var(--color-primary)' }}>
+            <div style={{ fontWeight: 700, marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Add a job by URL</span>
+              <button onClick={() => setShowAddJob(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}><X size={14} /></button>
+            </div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.85rem' }}>
+              Paste a direct Greenhouse, Lever, LinkedIn Easy Apply, or Naukri job URL — the bot will open it and fill your profile automatically.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+              <input value={addJobForm.url} onChange={e => setAddJobForm(p => ({ ...p, url: e.target.value }))}
+                placeholder="https://boards.greenhouse.io/company/jobs/123 or LinkedIn/Naukri job URL *"
+                style={{ ...inp, width: '100%', boxSizing: 'border-box' }} />
+              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <input value={addJobForm.title} onChange={e => setAddJobForm(p => ({ ...p, title: e.target.value }))}
+                  placeholder="Job title *" style={{ ...inp, flex: 1, minWidth: 160 }} />
+                <input value={addJobForm.company} onChange={e => setAddJobForm(p => ({ ...p, company: e.target.value }))}
+                  placeholder="Company" style={{ ...inp, flex: 1, minWidth: 140 }} />
+                <input value={addJobForm.location} onChange={e => setAddJobForm(p => ({ ...p, location: e.target.value }))}
+                  placeholder="Location" style={{ ...inp, flex: 1, minWidth: 120 }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button onClick={() => setShowAddJob(false)} style={btnSecondary}>Cancel</button>
+                <button onClick={addCustomJob} disabled={!addJobForm.url || !addJobForm.title} style={{ ...btnPrimary, opacity: !addJobForm.url || !addJobForm.title ? 0.5 : 1 }}>
+                  <Plus size={13} /> Add &amp; Apply
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {msg && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', marginBottom: '1.25rem', borderRadius: 'var(--radius-md)', border: `1px solid ${msg.type === 'success' ? 'var(--color-accent)' : 'var(--color-danger)'}`, color: msg.type === 'success' ? 'var(--color-accent)' : 'var(--color-danger)', background: msg.type === 'success' ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)' }}>
@@ -561,7 +634,7 @@ function JobCard({ job, score, saved, queued, applied, applying, result, expande
           ) : (
             <button onClick={onApply} disabled={applying} style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.35rem 0.85rem', borderRadius: 'var(--radius-sm)', background: applying ? 'rgba(124,58,237,0.5)' : 'var(--grad-primary)', color: 'white', fontSize: '0.78rem', fontWeight: 700, border: 'none', cursor: applying ? 'not-allowed' : 'pointer' }}>
               {applying ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Play size={12} />}
-              {applying ? 'Applying…' : 'Apply Now'}
+              {applying ? 'Applying…' : (job.apply_url ? 'Auto-Apply' : 'Apply Now')}
             </button>
           )}
         </div>
