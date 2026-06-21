@@ -92,6 +92,7 @@ export default function JobsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [applyResults, setApplyResults] = useState<Record<string, 'success' | 'error'>>({});
+  const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [isBatchApplying, setIsBatchApplying] = useState(false);
@@ -121,11 +122,13 @@ export default function JobsPage() {
         .then(data => { if (data.profile) setProfile(data.profile); })
         .catch(() => {});
 
-      // Load saved/queued ids from localStorage
+      // Load saved/queued/applied ids from localStorage
       const savedRaw   = localStorage.getItem(`saved-jobs-${u!.id}`);
       const queuedRaw  = localStorage.getItem(`queued-jobs-${u!.id}`);
-      if (savedRaw)  setSavedIds(new Set(JSON.parse(savedRaw)));
-      if (queuedRaw) setQueuedIds(new Set(JSON.parse(queuedRaw)));
+      const appliedRaw = localStorage.getItem(`applied-jobs-${u!.id}`);
+      if (savedRaw)   setSavedIds(new Set(JSON.parse(savedRaw)));
+      if (queuedRaw)  setQueuedIds(new Set(JSON.parse(queuedRaw)));
+      if (appliedRaw) setAppliedIds(new Set(JSON.parse(appliedRaw)));
 
       await fetchJobs();
     };
@@ -249,6 +252,12 @@ export default function JobsPage() {
             done = true;
             addLog(`[${ts()}] ✅ Application submitted successfully!`);
             setApplyResults(p => ({ ...p, [job.id]: 'success' }));
+            setAppliedIds(prev => {
+              const n = new Set(prev);
+              n.add(job.id);
+              localStorage.setItem(`applied-jobs-${user.id}`, JSON.stringify([...n]));
+              return n;
+            });
             setQueuedIds(prev => { const n = new Set(prev); n.delete(job.id); localStorage.setItem(`queued-jobs-${user.id}`, JSON.stringify([...n])); return n; });
             setMsg({ type: 'success', text: `Applied to ${job.title} at ${job.company}!` });
           } else if (ld.status === 'failed') {
@@ -291,6 +300,7 @@ export default function JobsPage() {
   const jobsWithScores = filteredJobs.map(j => ({ ...j, _score: matchScore(j, profile) }));
   const sorted = [...jobsWithScores].sort((a, b) => b._score - a._score);
   const queueCount = queuedIds.size;
+  const appliedCount = appliedIds.size;
 
   return (
     <div style={{ minHeight: '100vh', padding: '2rem' }}>
@@ -301,7 +311,7 @@ export default function JobsPage() {
           <div>
             <h1 className="grad-text" style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '0.25rem' }}>Job Board</h1>
             <p style={{ color: 'var(--text-muted)' }}>
-              {filteredJobs.length} jobs {profile ? '· scored against your profile' : '· <a href="/profile">set profile</a> for match scores'}
+              {filteredJobs.length} jobs{appliedCount > 0 ? ` · ${appliedCount} applied` : ''} {profile ? '· scored against your profile' : ''}
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
@@ -399,6 +409,7 @@ export default function JobsPage() {
                     score={job._score}
                     saved={savedIds.has(job.id)}
                     queued={queuedIds.has(job.id)}
+                    applied={appliedIds.has(job.id)}
                     applying={applyingId === job.id}
                     result={applyResults[job.id]}
                     expanded={expandedId === job.id}
@@ -448,17 +459,17 @@ export default function JobsPage() {
 }
 
 // ── Job Card ──────────────────────────────────────────────────────────────────
-function JobCard({ job, score, saved, queued, applying, result, expanded, onExpand, onSave, onQueue, onApply }: {
-  job: any; score: number; saved: boolean; queued: boolean; applying: boolean;
+function JobCard({ job, score, saved, queued, applied, applying, result, expanded, onExpand, onSave, onQueue, onApply }: {
+  job: any; score: number; saved: boolean; queued: boolean; applied: boolean; applying: boolean;
   result?: 'success' | 'error'; expanded: boolean;
   onExpand: () => void; onSave: () => void; onQueue: () => void; onApply: () => void;
 }) {
   const col = scoreColor(score);
-  const done = result === 'success';
-  const failed = result === 'error';
+  const done = applied || result === 'success';
+  const failed = !done && result === 'error';
 
   return (
-    <div className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: queued ? '1.5px solid rgba(124,58,237,0.4)' : done ? '1.5px solid rgba(16,185,129,0.4)' : undefined }}>
+    <div className="glass-panel" style={{ padding: 0, overflow: 'hidden', border: done ? '1.5px solid rgba(16,185,129,0.4)' : queued ? '1.5px solid rgba(124,58,237,0.4)' : undefined }}>
       {/* Main row */}
       <div style={{ padding: '1rem 1.25rem', display: 'flex', gap: '1rem', alignItems: 'flex-start' }}>
 
