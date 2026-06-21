@@ -1,8 +1,8 @@
 [build]
-buildCommand = "npm install && npx playwright install chromium --with-deps"
+dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "npm start"
+startCommand = "node index.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
