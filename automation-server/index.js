@@ -56,7 +56,10 @@ app.post('/apply', async (req, res) => {
     page.setDefaultTimeout(30000);
 
     log('Navigation', 'success', `Opening ${jobUrl}`);
-    await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(err => {
+      if (/ERR_TOO_MANY_REDIRECTS/i.test(err.message)) throw new Error('Job posting appears to be expired or removed. LinkedIn is redirect-looping on this URL.');
+      throw err;
+    });
     await delay(2000);
 
     const pageTitle = await page.title();
