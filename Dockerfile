@@ -1,7 +1,7 @@
-FROM mcr.microsoft.com/playwright:v1.44.0-jammy
+FROM mcr.microsoft.com/playwright:v1.61.0-jammy
 
-# bust cache: v2
-ARG CACHEBUST=2
+# bust cache: v3
+ARG CACHEBUST=3
 
 WORKDIR /app
 
