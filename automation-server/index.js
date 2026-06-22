@@ -175,7 +175,7 @@ async function applyLinkedIn(page, profile, resumePath, log) {
   const liAt = profile.linkedin_cookie || '';
 
   const isLoginPage = () => page.locator('input[name="session_key"]:visible, input[name="session_password"]:visible').count().then(n => n > 0);
-  const isChallengePage = () => page.url().then(u => /checkpoint|challenge|uas\/login|authwall/i.test(u));
+  const isChallengePage = () => /checkpoint|challenge|uas\/login|authwall/i.test(page.url());
 
   // If cookie auth didn't work and we're on login page, try credentials
   if (await isLoginPage()) {
