@@ -9,6 +9,9 @@ app.use(express.json({ limit: '10mb' }));
 const PORT = process.env.PORT || 4000;
 const API_SECRET = process.env.AUTOMATION_SECRET || '';
 
+// Health check is public (Railway probe doesn't send auth header)
+app.get('/health', (_, res) => res.json({ ok: true }));
+
 // ── Auth middleware ────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   if (!API_SECRET) return next(); // no secret set = open (dev only)
@@ -16,8 +19,6 @@ app.use((req, res, next) => {
   if (auth !== API_SECRET) return res.status(401).json({ error: 'Unauthorized' });
   next();
 });
-
-app.get('/health', (_, res) => res.json({ ok: true }));
 
 // ── Main apply endpoint ────────────────────────────────────────────────────────
 app.post('/apply', async (req, res) => {
