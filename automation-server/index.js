@@ -50,16 +50,20 @@ app.post('/apply', async (req, res) => {
     const ctx = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 800 },
-      ...(liAt ? { storageState: { cookies: [{ name: 'li_at', value: liAt, domain: '.linkedin.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' }], origins: [] } } : {}),
     });
     const page = await ctx.newPage();
     page.setDefaultTimeout(30000);
 
+    // For LinkedIn: navigate to homepage first so the domain context is established,
+    // then inject the cookie, then navigate to the job — prevents redirect loops
+    if (liAt && /linkedin\.com/i.test(jobUrl)) {
+      await page.goto('https://www.linkedin.com', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+      await ctx.addCookies([{ name: 'li_at', value: liAt, domain: '.linkedin.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' }]);
+      await delay(500);
+    }
+
     log('Navigation', 'success', `Opening ${jobUrl}`);
-    await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(err => {
-      if (/ERR_TOO_MANY_REDIRECTS/i.test(err.message)) throw new Error('Job posting appears to be expired or removed. LinkedIn is redirect-looping on this URL.');
-      throw err;
-    });
+    await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await delay(2000);
 
     const pageTitle = await page.title();
