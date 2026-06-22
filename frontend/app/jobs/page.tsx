@@ -235,7 +235,7 @@ export default function JobsPage() {
         body: JSON.stringify({
           jobId: job.id,
           userId: user.id,
-          jobUrl: job.apply_url || job.url,
+          jobUrl: normalizeJobUrl(job.apply_url || job.url || ''),
           jobTitle: job.title,
           company: job.company,
           profile,
