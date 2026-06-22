@@ -84,6 +84,7 @@ const DEFAULT_PROFILE = {
   // Job board credentials (stored locally only)
   linkedin_email: '',
   linkedin_password: '',
+  linkedin_cookie: '',
   naukri_email: '',
   naukri_password: '',
 };
@@ -172,7 +173,7 @@ export default function ProfilePage() {
     setIsSaving(true);
     try {
       // Strip job-board passwords before sending to server — stored only in localStorage
-      const { linkedin_password, naukri_password, ...profileForServer } = profile;
+      const { linkedin_password, linkedin_cookie, naukri_password, ...profileForServer } = profile;
       await fetch('/api/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -420,6 +421,19 @@ export default function ProfilePage() {
                       {showLinkedInPw ? <EyeOff size={15} /> : <Eye size={15} />}
                     </button>
                   </div>
+                </div>
+                <div style={{ background: 'rgba(0,119,181,0.06)', borderRadius: 'var(--radius-sm)', padding: '0.65rem 0.85rem', border: '1px solid rgba(0,119,181,0.15)' }}>
+                  <div style={{ fontSize: '0.73rem', fontWeight: 700, color: '#0077b5', marginBottom: '0.3rem' }}>⚡ Recommended: Session Cookie (more reliable)</div>
+                  <div style={{ fontSize: '0.71rem', color: 'var(--text-muted)', marginBottom: '0.5rem', lineHeight: 1.5 }}>
+                    Log in to LinkedIn in your browser → open DevTools (F12) → Application → Cookies → linkedin.com → copy the <strong>li_at</strong> value. This bypasses CAPTCHA completely.
+                  </div>
+                  <input
+                    type="password"
+                    value={profile.linkedin_cookie}
+                    onChange={e => set('linkedin_cookie', e.target.value)}
+                    placeholder="Paste li_at cookie value here"
+                    style={{ ...inp }}
+                  />
                 </div>
                 <a
                   href="https://www.linkedin.com/login"

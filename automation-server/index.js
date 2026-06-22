@@ -39,12 +39,20 @@ app.post('/apply', async (req, res) => {
     const ats = detectATS(jobUrl);
     log('Initialization', 'success', `Chromium launching. ATS: ${ats.toUpperCase()}`);
 
-    browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process'],
+    });
+
+    // Inject LinkedIn session cookie if provided (bypasses login page entirely)
+    const liAt = profile.linkedin_cookie || '';
     const ctx = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 800 },
+      ...(liAt ? { storageState: { cookies: [{ name: 'li_at', value: liAt, domain: '.linkedin.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' }], origins: [] } } : {}),
     });
     const page = await ctx.newPage();
+    page.setDefaultTimeout(30000);
 
     log('Navigation', 'success', `Opening ${jobUrl}`);
     await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -164,16 +172,30 @@ async function applyLinkedIn(page, profile, resumePath, log) {
   log('Form Filling', 'running', 'LinkedIn Easy Apply flow.');
   const email = profile.linkedin_email || profile.email || '';
   const password = profile.linkedin_password || '';
+  const liAt = profile.linkedin_cookie || '';
 
-  // Login if needed
-  if (await page.locator('a[href*="login"]:visible, button:has-text("Sign in"):visible').count() > 0) {
-    if (!email || !password) throw new Error('LinkedIn credentials not set. Add them in your Profile → Job Board Credentials.');
-    await page.locator('a[href*="login"]').first().click();
+  const isLoginPage = () => page.locator('input[name="session_key"]:visible, input[name="session_password"]:visible').count().then(n => n > 0);
+  const isChallengePage = () => page.url().then(u => /checkpoint|challenge|uas\/login|authwall/i.test(u));
+
+  // If cookie auth didn't work and we're on login page, try credentials
+  if (await isLoginPage()) {
+    if (!email || !password) {
+      throw new Error(
+        liAt
+          ? 'LinkedIn session cookie expired. Get a fresh li_at cookie from your browser and update it in Profile → Job Board Credentials.'
+          : 'LinkedIn credentials not set. Add your LinkedIn email + password in Profile → Job Board Credentials.'
+      );
+    }
     await page.fill('input[name="session_key"]', email);
     await page.fill('input[name="session_password"]', password);
     await page.click('button[type="submit"]');
-    await page.waitForNavigation({ timeout: 20000 }).catch(() => {});
+    await page.waitForURL(/feed|jobs|mynetwork/, { timeout: 20000 }).catch(() => {});
     await delay(2000);
+  }
+
+  // Check if LinkedIn is showing a security challenge (CAPTCHA, phone verify, etc.)
+  if (await isChallengePage()) {
+    throw new Error('LinkedIn requires verification (CAPTCHA or 2FA). Use the li_at cookie method instead: log in on your browser, copy the li_at cookie, paste it in Profile → Job Board Credentials.');
   }
 
   // Easy Apply button

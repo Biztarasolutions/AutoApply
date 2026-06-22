@@ -246,6 +246,7 @@ export default function JobsPage() {
                 ...profile,
                 linkedin_email: local.linkedin_email || profile?.linkedin_email,
                 linkedin_password: local.linkedin_password || profile?.linkedin_password,
+                linkedin_cookie: local.linkedin_cookie || profile?.linkedin_cookie,
                 naukri_email: local.naukri_email || profile?.naukri_email,
                 naukri_password: local.naukri_password || profile?.naukri_password,
               };
