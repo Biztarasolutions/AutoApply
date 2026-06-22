@@ -238,7 +238,19 @@ export default function JobsPage() {
           jobUrl: normalizeJobUrl(job.apply_url || job.url || ''),
           jobTitle: job.title,
           company: job.company,
-          profile,
+          // Merge credentials from localStorage — passwords are never stored server-side
+          profile: (() => {
+            try {
+              const local = JSON.parse(localStorage.getItem(`profile-${user.id}`) || '{}');
+              return {
+                ...profile,
+                linkedin_email: local.linkedin_email || profile?.linkedin_email,
+                linkedin_password: local.linkedin_password || profile?.linkedin_password,
+                naukri_email: local.naukri_email || profile?.naukri_email,
+                naukri_password: local.naukri_password || profile?.naukri_password,
+              };
+            } catch { return profile; }
+          })(),
         }),
       });
       const data = await res.json();
