@@ -2,11 +2,10 @@ FROM mcr.microsoft.com/playwright:v1.44.0-jammy
 
 WORKDIR /app
 
-# Copy only the automation-server subfolder (build context = repo root)
-COPY automation-server/package.json ./
+COPY package.json ./
 RUN npm install
 
-COPY automation-server/ .
+COPY . .
 
 EXPOSE 4000
 
