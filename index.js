@@ -45,7 +45,8 @@ app.post('/apply', async (req, res) => {
     });
 
     // Inject LinkedIn session cookie if provided (bypasses login page entirely)
-    const liAt = profile.linkedin_cookie || '';
+    // Strip surrounding quotes/spaces and URL-decode in case it was copied with them
+    const liAt = decodeURIComponent((profile.linkedin_cookie || '').trim().replace(/^["']|["']$/g, ''));
     const ctx = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       viewport: { width: 1280, height: 800 },
